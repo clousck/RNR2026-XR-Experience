@@ -1,0 +1,27 @@
+:root {
+  --accent: #ffd23f;
+  --panel: rgba(15, 17, 21, 0.72);
+  --text: #fff;
+  font: 16px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: var(--text);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled { opacity: 0.45; cursor: default; }
