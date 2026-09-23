@@ -3,7 +3,7 @@
  * reproduce exactamente lo que se ve en pantalla (mismo recorte que
  * object-fit: cover, mismo espejado de la camara frontal).
  */
-export function composePhoto({ video, mirror, stage, viewW, viewH }) {
+export function composePhoto({ video, mirror, stage, viewW, viewH, rotation = 0 }) {
   const gl = stage.renderNow()
   const hasVideo = video && video.videoWidth > 0
 
@@ -49,6 +49,30 @@ export function composePhoto({ video, mirror, stage, viewW, viewH }) {
   // valido dentro de esta misma tarea.
   ctx.drawImage(stage.renderNow(), 0, 0, outW, outH)
 
+  return toJpeg(rotateCanvas(canvas, rotation))
+}
+
+/**
+ * Gira la imagen para que quede derecha cuando el telefono estaba de lado y
+ * la pagina no roto. `rotation` = cuanto giro el telefono en sentido
+ * antihorario; la imagen se gira lo mismo en el mismo sentido.
+ */
+export function rotateCanvas(src, rotation) {
+  const deg = ((rotation % 360) + 360) % 360
+  if (!deg) return src
+  const sideways = deg === 90 || deg === 270
+  const out = document.createElement('canvas')
+  out.width = sideways ? src.height : src.width
+  out.height = sideways ? src.width : src.height
+  const ctx = out.getContext('2d')
+  ctx.translate(out.width / 2, out.height / 2)
+  // En canvas el angulo positivo es horario: negativo = antihorario.
+  ctx.rotate((-deg * Math.PI) / 180)
+  ctx.drawImage(src, -src.width / 2, -src.height / 2)
+  return out
+}
+
+export function toJpeg(canvas) {
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo generar la foto'))), 'image/jpeg', 0.92),
   )

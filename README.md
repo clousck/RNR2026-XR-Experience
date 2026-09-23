@@ -32,6 +32,15 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
   interpolan hacia la pose nueva. Cada pose se ajusta para que su punto más bajo
   toque el piso: "Acostado" queda tendido en el suelo (0.34 m alto × 0.8 m largo).
 - **Foto**: JPG con exactamente lo que se ve, sin los botones.
+- **Foto horizontal**: si la rotación automática está activada, la página gira
+  y la foto sale horizontal sola. Si está bloqueada, el acelerómetro detecta que
+  el teléfono está de lado: Watt se muestra derecho, aparece la etiqueta
+  "Foto horizontal" y la foto se guarda girada, en horizontal. La interfaz no
+  gira. Funciona en modo cámara y en AR. En iPhone el acelerómetro pide
+  permiso; se solicita con el primer toque. `?rot=90` simula el giro en escritorio.
+- **Salir**: en AR vuelve al modo cámara; fuera del AR apaga la cámara y muestra
+  una pantalla de cierre (una página abierta desde un QR no puede cerrar su propia
+  pestaña). "Volver a empezar" reabre la cámara.
 - **Compartir**: Web Share API → hoja de compartir del sistema → WhatsApp → grupo.
   Ninguna web puede mandar una imagen directo a un grupo; el usuario lo elige.
 
@@ -43,6 +52,7 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
     src/lib/wattStage.js       escena, carga del FBX, poses, gestos, AR WebXR
     src/lib/quickLook.js       pose → USDZ para Quick Look (iPhone)
     src/lib/useCamera.js       cámara frontal/trasera
+    src/lib/useDeviceRotation.js  teléfono de lado con la rotación bloqueada
     src/lib/composePhoto.js    video + Watt → JPG
 
 ## Poses

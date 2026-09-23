@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import WattCanvas from './components/WattCanvas'
 import { useCamera } from './lib/useCamera'
+import { requestMotionPermission, useDeviceRotation } from './lib/useDeviceRotation'
 import { composePhoto } from './lib/composePhoto'
 import { buildPoseUSDZ, openQuickLook, supportsQuickLook } from './lib/quickLook'
 import { POSES, initialPose } from './poses'
@@ -48,12 +49,29 @@ export default function App() {
   const [inAR, setInAR] = useState(false)
   const [placed, setPlaced] = useState(false)
   const [usdz, setUsdz] = useState(null)
+  const [exited, setExited] = useState(false)
 
   const { videoRef, status: camStatus, error: camError, retry: retryCam } = useCamera(
     facing,
-    !NO_CAM && !inAR,
+    !NO_CAM && !inAR && !exited,
   )
   const mirror = facing === 'user'
+  // Giro del telefono que la pagina no aplico (rotacion automatica apagada).
+  const rotation = useDeviceRotation()
+  const landscape = rotation % 180 !== 0
+
+  // Con el telefono de lado, la camara virtual gira para que Watt se vea
+  // derecho. En AR no hace falta: Watt esta anclado al piso real.
+  useEffect(() => {
+    if (loaded) stageRef.current?.setRoll(inAR ? 0 : rotation)
+  }, [rotation, inAR, loaded])
+
+  // iOS pide permiso para el acelerometro: lo solicitamos con el primer toque.
+  useEffect(() => {
+    const el = boothRef.current
+    el.addEventListener('pointerdown', requestMotionPermission, { once: true })
+    return () => el.removeEventListener('pointerdown', requestMotionPermission)
+  }, [])
 
   useEffect(() => {
     detectAR().then(setArMode)
@@ -120,7 +138,17 @@ export default function App() {
     }
   }
 
-  const exitAR = () => stageRef.current?.endAR()
+  // Salir: en AR vuelve al modo camara; fuera del AR cierra la experiencia
+  // (apaga la camara). Una pagina abierta desde un QR no puede cerrar su
+  // propia pestaña, asi que mostramos una pantalla de cierre.
+  const exit = () => {
+    setCount(null)
+    if (stageRef.current?.ar) {
+      stageRef.current.endAR()
+      return
+    }
+    setExited(true)
+  }
 
   const capture = useCallback(async () => {
     const stage = stageRef.current
@@ -129,19 +157,20 @@ export default function App() {
     setFlashKey((k) => k + 1)
     try {
       const blob = stage.ar
-        ? await stage.captureAR()
+        ? await stage.captureAR(rotation)
         : await composePhoto({
             video: NO_CAM ? null : videoRef.current,
             mirror,
             stage,
             viewW: view.clientWidth,
             viewH: view.clientHeight,
+            rotation,
           })
       setPhoto({ blob, url: URL.createObjectURL(blob) })
     } catch (e) {
       setNotice(e.message)
     }
-  }, [videoRef, mirror])
+  }, [videoRef, mirror, rotation])
 
   // Cuenta regresiva 3 → 2 → 1 → foto.
   useEffect(() => {
@@ -244,25 +273,26 @@ export default function App() {
       )}
 
       <header className="top-bar">
-        {inAR ? (
-          <button className="icon-btn" onClick={exitAR} aria-label="Salir del AR">
-            ✕
-          </button>
-        ) : (
-          <button className="icon-btn" onClick={() => stageRef.current?.resetTransform()} aria-label="Centrar a Watt">
-            ⟲
-          </button>
-        )}
+        <button className="exit-btn" onClick={exit}>
+          {inAR ? 'Salir del AR' : 'Salir'}
+        </button>
         {hint && <p className="hint">{hint}</p>}
-        {!NO_CAM && !inAR && (
-          <button
-            className="icon-btn"
-            onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
-            aria-label="Cambiar cámara"
-          >
-            ⇄
-          </button>
-        )}
+        <div className="top-actions">
+          {!inAR && (
+            <button className="icon-btn" onClick={() => stageRef.current?.resetTransform()} aria-label="Centrar a Watt">
+              ⟲
+            </button>
+          )}
+          {!NO_CAM && !inAR && (
+            <button
+              className="icon-btn"
+              onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
+              aria-label="Cambiar cámara"
+            >
+              ⇄
+            </button>
+          )}
+        </div>
       </header>
 
       <footer className="bottom-bar">
@@ -290,6 +320,7 @@ export default function App() {
             </button>
           ))}
         </div>
+        {landscape && <p className="orientation-badge">Foto horizontal</p>}
         <button
           className="shutter"
           onClick={() => setCount(COUNTDOWN)}
@@ -306,6 +337,16 @@ export default function App() {
         </div>
       )}
       {flashKey > 0 && <div className="flash" key={flashKey} />}
+
+      {exited && (
+        <div className="goodbye">
+          <p className="goodbye-title">¡Gracias por jugar con Watt!</p>
+          <p>Ya puedes cerrar esta pestaña.</p>
+          <button className="ar-btn" onClick={() => setExited(false)}>
+            Volver a empezar
+          </button>
+        </div>
+      )}
 
       {photo && (
         <div className="preview">

@@ -251,3 +251,45 @@
   opacity: 0.85;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
+
+/* --- salir --- */
+.exit-btn {
+  height: 44px;
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--panel);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.top-actions { display: flex; gap: 0.5rem; }
+
+.goodbye {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+  background: #0f1115;
+}
+
+.goodbye p { margin: 0; opacity: 0.85; }
+.goodbye .goodbye-title { font-size: 1.4rem; font-weight: 700; opacity: 1; }
+.goodbye .ar-btn { margin-top: 1rem; }
+
+/* --- foto horizontal --- */
+.orientation-badge {
+  margin: -0.4rem 0 0;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 210, 63, 0.9);
+  color: #1a1400;
+  font-size: 0.75rem;
+  font-weight: 700;
+}

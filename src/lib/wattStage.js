@@ -10,17 +10,21 @@ import {
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
+  Plane,
   PlaneGeometry,
   PropertyBinding,
   Quaternion,
   RawShaderMaterial,
+  Raycaster,
   RingGeometry,
   Scene,
   ShadowMaterial,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+import { rotateCanvas, toJpeg } from './composePhoto'
 
 const FOV = 35
 const CAM_DIST = 3
@@ -55,8 +59,9 @@ export class WattStage {
 
     this.scene = new Scene()
     this.camera = new PerspectiveCamera(FOV, 1, 0.05, 50)
-    this.camera.position.set(0, 0.5, CAM_DIST)
-    this.camera.lookAt(0, 0.5, 0)
+    this.roll = 0
+    this.applyCamera()
+    this.raycaster = new Raycaster()
 
     this.scene.add(new HemisphereLight(0xffffff, 0x9a9aa8, 2.4))
 
@@ -174,11 +179,45 @@ export class WattStage {
 
   // --- gestos ---
 
-  moveBy(dxPx, dyPx) {
-    const worldPerPx =
-      (2 * CAM_DIST * Math.tan(MathUtils.degToRad(FOV / 2))) / this.canvas.clientHeight
-    this.root.position.x += dxPx * worldPerPx
-    this.root.position.y -= dyPx * worldPerPx
+  /**
+   * Gira la camara virtual cuando el telefono esta de lado y la pagina no
+   * roto (rotacion automatica desactivada): asi Watt se ve derecho para
+   * quien sostiene el telefono. `deg` = giro antihorario del telefono.
+   */
+  setRoll(deg) {
+    if (deg === this.roll) return
+    this.roll = deg
+    this.applyCamera()
+  }
+
+  applyCamera() {
+    const cam = this.camera
+    cam.position.set(0, 0.5, CAM_DIST)
+    cam.lookAt(0, 0.5, 0)
+    cam.rotateZ(MathUtils.degToRad(this.roll))
+    // De lado, el "alto" para el usuario es el ancho de la pantalla: alejamos
+    // la camara para que Watt no ocupe toda la foto horizontal.
+    const sideways = this.roll % 180 !== 0
+    cam.zoom = sideways ? Math.min(1, cam.aspect * 1.45) : 1
+    cam.updateProjectionMatrix()
+  }
+
+  /** Punto de la pantalla (px) proyectado sobre el plano vertical de Watt. */
+  screenToPlane({ x, y }) {
+    const rect = this.canvas.getBoundingClientRect()
+    const ndc = new Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1)
+    this.raycaster.setFromCamera(ndc, this.camera)
+    const plane = new Plane(new Vector3(0, 0, 1), -this.root.position.z)
+    return this.raycaster.ray.intersectPlane(plane, new Vector3())
+  }
+
+  /** Mueve a Watt siguiendo el dedo, sea cual sea el giro de la camara. */
+  dragBetween(from, to) {
+    const a = this.screenToPlane(from)
+    const b = this.screenToPlane(to)
+    if (!a || !b) return
+    this.root.position.x += b.x - a.x
+    this.root.position.y += b.y - a.y
   }
 
   scaleBy(factor) {
@@ -231,7 +270,7 @@ export class WattStage {
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
       const cur = measure()
       if (prev && cur.n === prev.n) {
-        if (this.gestureMode === 'screen') this.moveBy(cur.mid.x - prev.mid.x, cur.mid.y - prev.mid.y)
+        if (this.gestureMode === 'screen') this.dragBetween(prev.mid, cur.mid)
         if (cur.n >= 2 && prev.dist > 0) {
           this.lastMultiTouch = performance.now()
           this.scaleBy(cur.dist / prev.dist)
@@ -351,7 +390,7 @@ export class WattStage {
   }
 
   /** Foto dentro de la sesion AR: imagen de la camara + Watt. */
-  captureAR() {
+  captureAR(rotation = 0) {
     if (!this.ar) return Promise.reject(new Error('No hay sesión AR'))
     if (!this.ar.cameraAccess) {
       return Promise.reject(
@@ -359,7 +398,7 @@ export class WattStage {
       )
     }
     return new Promise((resolve, reject) => {
-      this.ar.capture = { resolve, reject }
+      this.ar.capture = { resolve, reject, rotation }
     })
   }
 
@@ -380,7 +419,7 @@ export class WattStage {
    * textura de la camara solo es valida durante este callback.
    */
   runARCapture(xrFrame) {
-    const { resolve, reject } = this.ar.capture
+    const { resolve, reject, rotation } = this.ar.capture
     this.ar.capture = null
     const r = this.renderer
     const prevTarget = r.getRenderTarget()
@@ -415,7 +454,7 @@ export class WattStage {
       out.width = this.canvas.width
       out.height = this.canvas.height
       out.getContext('2d').drawImage(this.canvas, 0, 0)
-      out.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo generar la foto'))), 'image/jpeg', 0.92)
+      toJpeg(rotateCanvas(out, rotation)).then(resolve, reject)
     } catch (e) {
       reject(e)
     } finally {
@@ -461,7 +500,7 @@ export class WattStage {
     this.size = { w, h }
     this.renderer.setSize(w, h, false)
     this.camera.aspect = w / h
-    this.camera.updateProjectionMatrix()
+    this.applyCamera()
   }
 
   frame(now, xrFrame) {
