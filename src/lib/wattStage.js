@@ -27,6 +27,8 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { rotateCanvas, toJpeg } from './composePhoto'
 
 const FOV = 35
+// Para la vista previa basta con x2; la foto se renderiza aparte a su resolucion.
+const SCREEN_PIXEL_RATIO = () => Math.min(window.devicePixelRatio, 2)
 const CAM_DIST = 3
 const HOME = { x: 0, y: 0.08, scale: 0.8, rotY: 0 }
 // Altura de Watt en AR, en metros (el modelo mide 1 unidad).
@@ -53,7 +55,7 @@ export class WattStage {
   constructor(canvas) {
     this.canvas = canvas
     this.renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.setPixelRatio(SCREEN_PIXEL_RATIO())
     this.renderer.setClearColor(0x000000, 0)
     this.renderer.shadowMap.enabled = true
 
@@ -332,6 +334,12 @@ export class WattStage {
     this.root.visible = false
     this.gestureMode = 'world'
 
+    // La foto en AR sale del canvas: a resolucion nativa de la pantalla (no se
+    // puede cambiar el tamaño una vez iniciada la sesion).
+    this.renderer.setPixelRatio(window.devicePixelRatio)
+    this.size = { w: 0, h: 0 }
+    this.resizeIfNeeded()
+
     this.renderer.xr.enabled = true
     this.renderer.xr.setReferenceSpaceType('local')
     await this.renderer.xr.setSession(session)
@@ -368,6 +376,7 @@ export class WattStage {
       this.root.position.copy(this.saved.position)
       this.root.scale.setScalar(this.saved.scale)
       this.root.rotation.set(0, this.saved.rotY, 0)
+      this.renderer.setPixelRatio(SCREEN_PIXEL_RATIO())
       this.size = { w: 0, h: 0 } // forzar resize al volver a pantalla
       onEnd?.()
     })
@@ -523,6 +532,39 @@ export class WattStage {
       return
     }
     this.renderNow()
+  }
+
+  /**
+   * Renderiza la escena a w×h pixeles (la resolucion de la foto) y devuelve
+   * una copia en un canvas 2D. Mismo encuadre que la pantalla: w/h tiene el
+   * aspecto de la vista. Se limita al maximo que soporte la GPU.
+   */
+  renderAtSize(w, h) {
+    const r = this.renderer
+    const gl = r.getContext()
+    const [maxW, maxH] = gl.getParameter(gl.MAX_VIEWPORT_DIMS)
+    const limit = Math.min(maxW, maxH, r.capabilities.maxTextureSize)
+    const s = Math.min(1, limit / Math.max(w, h))
+    const W = Math.round(w * s)
+    const H = Math.round(h * s)
+
+    const prevRatio = r.getPixelRatio()
+    r.setPixelRatio(1)
+    r.setSize(W, H, false)
+    this.camera.aspect = W / H
+    this.applyCamera()
+    r.render(this.scene, this.camera)
+
+    const out = document.createElement('canvas')
+    out.width = W
+    out.height = H
+    out.getContext('2d').drawImage(this.canvas, 0, 0)
+
+    // Volver al tamaño de pantalla en la misma tarea: no se ve parpadeo.
+    r.setPixelRatio(prevRatio)
+    this.size = { w: 0, h: 0 }
+    this.renderNow()
+    return out
   }
 
   /**

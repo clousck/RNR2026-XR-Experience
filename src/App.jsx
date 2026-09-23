@@ -50,6 +50,7 @@ export default function App() {
   const [placed, setPlaced] = useState(false)
   const [usdz, setUsdz] = useState(null)
   const [exited, setExited] = useState(false)
+  const [processing, setProcessing] = useState(false)
 
   const { videoRef, status: camStatus, error: camError, retry: retryCam } = useCamera(
     facing,
@@ -155,6 +156,7 @@ export default function App() {
     const view = viewRef.current
     if (!stage || !view) return
     setFlashKey((k) => k + 1)
+    setProcessing(true)
     try {
       const blob = stage.ar
         ? await stage.captureAR(rotation)
@@ -169,6 +171,8 @@ export default function App() {
       setPhoto({ blob, url: URL.createObjectURL(blob) })
     } catch (e) {
       setNotice(e.message)
+    } finally {
+      setProcessing(false)
     }
   }, [videoRef, mirror, rotation])
 
@@ -225,7 +229,7 @@ export default function App() {
   }
 
   const counting = count !== null
-  const canShoot = loaded && !counting && (!inAR || placed)
+  const canShoot = loaded && !counting && !processing && (!inAR || placed)
   const showARButton = !inAR && (arMode === 'webxr' || arMode === 'quicklook')
 
   let hint = null
@@ -337,6 +341,7 @@ export default function App() {
         </div>
       )}
       {flashKey > 0 && <div className="flash" key={flashKey} />}
+      {processing && <div className="overlay-msg processing">Procesando foto…</div>}
 
       {exited && (
         <div className="goodbye">

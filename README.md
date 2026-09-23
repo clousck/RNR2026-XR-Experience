@@ -31,7 +31,17 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
 - **Poses**: cada pose del FBX es un clip de un solo keyframe; los huesos
   interpolan hacia la pose nueva. Cada pose se ajusta para que su punto más bajo
   toque el piso: "Acostado" queda tendido en el suelo (0.34 m alto × 0.8 m largo).
-- **Foto**: JPG con exactamente lo que se ve, sin los botones.
+- **Foto**: JPG con exactamente lo que se ve, sin los botones. Resolución:
+  - *Android (Chrome)*: foto real del sensor con `ImageCapture.takePhoto()`, a la
+    resolución máxima de la cámara, recortada al encuadre de la pantalla sin
+    estirar (en un Pixel 9, ~1820×4080). La foto del sensor es 4:3 y puede venir
+    girada, y el video puede estar recortado por estabilización: en vez de
+    suponerlo, se compara una miniatura del video con la foto para encontrar el
+    giro y el recorte. Si la coincidencia no es confiable, se usa el cuadro de video.
+  - *iPhone*: Safari no tiene `ImageCapture`; la foto sale del video, pedido en 4K.
+  - *AR*: la imagen de la cámara la fija ARCore; la foto sale a la resolución
+    nativa de la pantalla.
+  - Watt se renderiza directo a la resolución final. JPG calidad 0.95.
 - **Foto horizontal**: si la rotación automática está activada, la página gira
   y la foto sale horizontal sola. Si está bloqueada, el acelerómetro detecta que
   el teléfono está de lado: Watt se muestra derecho, aparece la etiqueta

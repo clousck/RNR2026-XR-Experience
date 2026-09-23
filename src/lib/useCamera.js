@@ -7,6 +7,14 @@ const MESSAGES = {
   OverconstrainedError: 'Esta cámara no está disponible.',
 }
 
+// Con ImageCapture (Chrome/Android) la foto sale del sensor a resolucion
+// completa, asi que la vista previa puede ser 1080p. Sin ImageCapture
+// (iPhone) la foto sale del video: pedimos 4K.
+const PREVIEW_SIZE =
+  typeof ImageCapture !== 'undefined'
+    ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
+    : { width: { ideal: 3840 }, height: { ideal: 2160 } }
+
 /**
  * Abre la camara (`user` = frontal, `environment` = trasera) y la conecta al
  * <video> de videoRef. `enabled: false` no pide la camara (modo ?nocam).
@@ -28,10 +36,7 @@ export function useCamera(facing, enabled = true) {
             name: 'Unsupported',
           })
         }
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
-          audio: false,
-        })
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, ...PREVIEW_SIZE }, audio: false })
         if (cancelled) return
         const video = videoRef.current
         video.srcObject = stream
