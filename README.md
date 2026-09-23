@@ -17,7 +17,7 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
 | iPhone / iPad (Safari) | AR Quick Look con la pose elegida | Se elige antes de entrar | No: botón de foto de Quick Look o captura de pantalla |
 | Otros | Solo modo cámara | Sí | Sí |
 
-- **Modo cámara**: `getUserMedia`, frontal por defecto (⇄ cambia). Watt fijo en
+- **Modo cámara**: `getUserMedia`, trasera por defecto (⇄ cambia a la frontal). Watt fijo en
   pantalla: un dedo lo mueve, dos dedos lo agrandan y lo giran, ⟲ lo centra.
 - **AR en Android**: sesión WebXR `immersive-ar` con `hit-test` (detecta el piso),
   `dom-overlay` (los botones siguen visibles) y `camera-access` (para que la foto

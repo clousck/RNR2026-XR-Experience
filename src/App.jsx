@@ -35,7 +35,8 @@ export default function App() {
   const stageRef = useRef(null)
   const boothRef = useRef(null)
   const viewRef = useRef(null)
-  const [facing, setFacing] = useState('user')
+  // Arranca con la trasera; el boton ⇄ cambia a la frontal (selfie).
+  const [facing, setFacing] = useState('environment')
   const [pose, setPose] = useState(START_POSE)
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState(null)
