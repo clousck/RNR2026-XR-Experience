@@ -4,14 +4,13 @@ import wattUrl from '../assets/watt.fbx?url'
 
 /**
  * Canvas transparente con Watt. Expone la instancia de WattStage en
- * stageRef para que el padre pueda capturar la foto o resetear la posicion.
+ * stageRef para que el padre maneje gestos, AR y la captura de la foto.
  */
 export default function WattCanvas({ stageRef, pose, initialPose, onLoaded, onError }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
     const stage = new WattStage(canvasRef.current)
-    const detach = stage.attachGestures(canvasRef.current)
     let disposed = false
 
     stage
@@ -20,13 +19,14 @@ export default function WattCanvas({ stageRef, pose, initialPose, onLoaded, onEr
         if (disposed) return
         stage.setPose(initialPose, true)
         stageRef.current = stage
+        // Solo en dev: permite inspeccionar la escena desde la consola.
+        if (import.meta.env.DEV) window.__watt = stage
         onLoaded?.()
       })
       .catch((e) => !disposed && onError?.(e))
 
     return () => {
       disposed = true
-      detach()
       stage.dispose()
       stageRef.current = null
     }

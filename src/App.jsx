@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import WattCanvas from './components/WattCanvas'
 import { useCamera } from './lib/useCamera'
 import { composePhoto } from './lib/composePhoto'
+import { buildPoseUSDZ, openQuickLook, supportsQuickLook } from './lib/quickLook'
 import { POSES, initialPose } from './poses'
 import './App.css'
 
@@ -9,9 +10,30 @@ const START_POSE = initialPose()
 // ?nocam: no pide la camara (util para probar en escritorio / capturas).
 const NO_CAM = new URLSearchParams(window.location.search).has('nocam')
 const COUNTDOWN = 3
+// Controles que no deben disparar el "tocar el piso" de WebXR.
+const UI_SELECTOR = 'button, .top-bar, .bottom-bar, .preview, .banner'
+
+/**
+ * Modos de AR, segun el dispositivo:
+ *  - webxr:     Android/Chrome. Watt en el piso, poses y foto dentro de la pagina.
+ *  - quicklook: iPhone/iPad. Quick Look con la pose elegida; la foto se toma
+ *               con el boton de captura de Quick Look.
+ *  - none:      solo el modo camara con Watt encima.
+ */
+async function detectAR() {
+  if (navigator.xr?.isSessionSupported) {
+    try {
+      if (await navigator.xr.isSessionSupported('immersive-ar')) return 'webxr'
+    } catch {
+      // sigue con el siguiente modo
+    }
+  }
+  return supportsQuickLook() ? 'quicklook' : 'none'
+}
 
 export default function App() {
   const stageRef = useRef(null)
+  const boothRef = useRef(null)
   const viewRef = useRef(null)
   const [facing, setFacing] = useState('user')
   const [pose, setPose] = useState(START_POSE)
@@ -21,9 +43,83 @@ export default function App() {
   const [flashKey, setFlashKey] = useState(0)
   const [photo, setPhoto] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [arMode, setArMode] = useState('checking')
+  const [inAR, setInAR] = useState(false)
+  const [placed, setPlaced] = useState(false)
+  const [usdz, setUsdz] = useState(null)
 
-  const { videoRef, status: camStatus, error: camError, retry: retryCam } = useCamera(facing, !NO_CAM)
+  const { videoRef, status: camStatus, error: camError, retry: retryCam } = useCamera(
+    facing,
+    !NO_CAM && !inAR,
+  )
   const mirror = facing === 'user'
+
+  useEffect(() => {
+    detectAR().then(setArMode)
+  }, [])
+
+  // Gestos sobre toda la pagina (no solo el canvas): en AR el canvas no se ve
+  // y lo que recibe los toques es el overlay.
+  useEffect(() => {
+    if (!loaded) return
+    return stageRef.current.attachGestures(boothRef.current)
+  }, [loaded])
+
+  // En AR, tocar un boton no debe mover a Watt.
+  useEffect(() => {
+    const el = boothRef.current
+    const block = (e) => e.target.closest?.(UI_SELECTOR) && e.preventDefault()
+    el.addEventListener('beforexrselect', block)
+    return () => el.removeEventListener('beforexrselect', block)
+  }, [])
+
+  // iPhone: el USDZ de la pose se genera por adelantado, porque Quick Look
+  // tiene que abrirse sincronicamente dentro del toque.
+  useEffect(() => {
+    if (arMode !== 'quicklook' || !loaded) return
+    let cancelled = false
+    let url = null
+    buildPoseUSDZ(stageRef.current, pose)
+      .then((u) => {
+        url = u
+        if (cancelled) URL.revokeObjectURL(u)
+        else setUsdz(u)
+      })
+      .catch((e) => !cancelled && setNotice(`No se pudo preparar el AR: ${e.message}`))
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+      setUsdz(null)
+    }
+  }, [arMode, loaded, pose])
+
+  const enterAR = async () => {
+    if (arMode === 'quicklook') {
+      if (usdz) openQuickLook(usdz)
+      return
+    }
+    // ARCore necesita la camara: soltamos la de getUserMedia antes de pedir la sesion.
+    videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop())
+    try {
+      const { cameraAccess } = await stageRef.current.startAR(boothRef.current, {
+        onPlaced: () => setPlaced(true),
+        onEnd: () => {
+          setInAR(false)
+          setPlaced(false)
+          setCount(null)
+        },
+      })
+      setInAR(true)
+      if (!cameraAccess) {
+        setNotice('Este teléfono no permite fotos dentro del AR: usa la captura de pantalla del teléfono.')
+      }
+    } catch (e) {
+      setNotice(`No se pudo iniciar el AR: ${e.message}`)
+      retryCam()
+    }
+  }
+
+  const exitAR = () => stageRef.current?.endAR()
 
   const capture = useCallback(async () => {
     const stage = stageRef.current
@@ -31,13 +127,15 @@ export default function App() {
     if (!stage || !view) return
     setFlashKey((k) => k + 1)
     try {
-      const blob = await composePhoto({
-        video: NO_CAM ? null : videoRef.current,
-        mirror,
-        stage,
-        viewW: view.clientWidth,
-        viewH: view.clientHeight,
-      })
+      const blob = stage.ar
+        ? await stage.captureAR()
+        : await composePhoto({
+            video: NO_CAM ? null : videoRef.current,
+            mirror,
+            stage,
+            viewW: view.clientWidth,
+            viewH: view.clientHeight,
+          })
       setPhoto({ blob, url: URL.createObjectURL(blob) })
     } catch (e) {
       setNotice(e.message)
@@ -65,7 +163,14 @@ export default function App() {
 
   const fileName = () => `foto-con-watt-${Date.now()}.jpg`
 
-  const download = () => {
+  // Compartir o descargar desde dentro de la sesion AR no es fiable (la hoja
+  // de compartir queda detras): primero se sale del AR.
+  const leaveARFirst = async () => {
+    if (stageRef.current?.ar) await stageRef.current.endAR()
+  }
+
+  const download = async () => {
+    await leaveARFirst()
     const a = document.createElement('a')
     a.href = photo.url
     a.download = fileName()
@@ -77,10 +182,11 @@ export default function App() {
   const share = async () => {
     const file = new File([photo.blob], fileName(), { type: 'image/jpeg' })
     if (!navigator.canShare?.({ files: [file] })) {
-      download()
+      await download()
       setNotice('Tu navegador no permite compartir directo: la foto se descargó, súbela desde la galería.')
       return
     }
+    await leaveARFirst()
     try {
       await navigator.share({ files: [file] })
     } catch (e) {
@@ -89,9 +195,15 @@ export default function App() {
   }
 
   const counting = count !== null
+  const canShoot = loaded && !counting && (!inAR || placed)
+  const showARButton = !inAR && (arMode === 'webxr' || arMode === 'quicklook')
+
+  let hint = null
+  if (inAR) hint = placed ? 'Toca el piso para moverlo · pellizca para agrandar y girar' : 'Apunta al piso y toca para poner a Watt'
+  else if (loaded) hint = 'Arrastra para mover · pellizca para agrandar y girar'
 
   return (
-    <main className="booth">
+    <main className={inAR ? 'booth in-ar' : 'booth'} ref={boothRef}>
       <div className="view" ref={viewRef}>
         {NO_CAM ? (
           <div className="backdrop" />
@@ -116,7 +228,7 @@ export default function App() {
       {!loaded && !loadError && <div className="overlay-msg">Cargando a Watt…</div>}
       {loadError && <div className="overlay-msg error">No se pudo cargar a Watt: {loadError}</div>}
 
-      {!NO_CAM && camStatus === 'error' && (
+      {!NO_CAM && !inAR && camStatus === 'error' && (
         <div className="banner">
           {camError}
           <button onClick={retryCam}>Reintentar</button>
@@ -131,11 +243,17 @@ export default function App() {
       )}
 
       <header className="top-bar">
-        <button className="icon-btn" onClick={() => stageRef.current?.resetTransform()} aria-label="Centrar a Watt">
-          ⟲
-        </button>
-        {loaded && <p className="hint">Arrastra para mover · pellizca para agrandar y girar</p>}
-        {!NO_CAM && (
+        {inAR ? (
+          <button className="icon-btn" onClick={exitAR} aria-label="Salir del AR">
+            ✕
+          </button>
+        ) : (
+          <button className="icon-btn" onClick={() => stageRef.current?.resetTransform()} aria-label="Centrar a Watt">
+            ⟲
+          </button>
+        )}
+        {hint && <p className="hint">{hint}</p>}
+        {!NO_CAM && !inAR && (
           <button
             className="icon-btn"
             onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
@@ -147,6 +265,18 @@ export default function App() {
       </header>
 
       <footer className="bottom-bar">
+        {showARButton && (
+          <button
+            className="ar-btn"
+            onClick={enterAR}
+            disabled={!loaded || (arMode === 'quicklook' && !usdz)}
+          >
+            {arMode === 'quicklook' && loaded && !usdz ? 'Preparando AR…' : 'Poner a Watt en el piso (AR)'}
+          </button>
+        )}
+        {arMode === 'quicklook' && !inAR && (
+          <p className="ar-note">En AR, toma la foto con el botón de foto de esa pantalla o con una captura de pantalla.</p>
+        )}
         <div className="poses">
           {POSES.map((p) => (
             <button
@@ -162,7 +292,7 @@ export default function App() {
         <button
           className="shutter"
           onClick={() => setCount(COUNTDOWN)}
-          disabled={!loaded || counting}
+          disabled={!canShoot}
           aria-label="Tomar foto en 3 segundos"
         >
           <span>{COUNTDOWN}s</span>

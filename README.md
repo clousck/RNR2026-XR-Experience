@@ -8,27 +8,40 @@ React + Vite + three.js. Sin backend.
 
 ## Cómo funciona
 
-- **Cámara**: `getUserMedia`. Arranca con la frontal (selfie); el botón ⇄ cambia
-  a la trasera. La frontal se ve espejada, como cualquier app de cámara.
-- **Watt**: se carga `src/assets/watt.fbx` con el `FBXLoader` de three.js y se
-  dibuja en un canvas transparente encima del video. Watt queda fijo en la
-  pantalla (no está anclado al suelo): un dedo lo mueve, dos dedos lo agrandan y
-  lo giran, ⟲ lo vuelve a centrar.
-- **Poses**: cada pose del FBX es un clip de un solo keyframe. Al tocar un botón,
-  los huesos interpolan hacia la pose nueva (transición suave, sin AnimationMixer).
-- **Foto**: se compone el frame del video + el render de Watt en un JPG, con el
-  mismo recorte que se ve en pantalla. Los botones de la UI no salen en la foto.
+La página abre en **modo cámara** (Watt encima del video) y, si el teléfono lo
+soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
+
+| Dispositivo | AR | Poses en AR | Foto 3s en AR |
+|---|---|---|---|
+| Android + Chrome (ARCore) | WebXR: Watt apoyado en el piso real | Sí, botones en pantalla | Sí (cámara + Watt) |
+| iPhone / iPad (Safari) | AR Quick Look con la pose elegida | Se elige antes de entrar | No: botón de foto de Quick Look o captura de pantalla |
+| Otros | Solo modo cámara | Sí | Sí |
+
+- **Modo cámara**: `getUserMedia`, frontal por defecto (⇄ cambia). Watt fijo en
+  pantalla: un dedo lo mueve, dos dedos lo agrandan y lo giran, ⟲ lo centra.
+- **AR en Android**: sesión WebXR `immersive-ar` con `hit-test` (detecta el piso),
+  `dom-overlay` (los botones siguen visibles) y `camera-access` (para que la foto
+  incluya la imagen de la cámara). Apuntas al piso, aparece un anillo amarillo,
+  tocas y Watt queda ahí mirando al teléfono, a 0.8 m de alto. Tocar el piso lo
+  mueve; pellizcar lo agranda y lo gira. Compartir/Descargar salen primero del AR.
+- **AR en iPhone**: Safari no tiene WebXR, así que se usa Quick Look. La pose
+  elegida se "hornea" en una malla estática y se exporta a USDZ en el propio
+  navegador (Quick Look no permite cambiar poses adentro). Para otra pose: salir,
+  elegirla y volver a entrar.
+- **Poses**: cada pose del FBX es un clip de un solo keyframe; los huesos
+  interpolan hacia la pose nueva. Cada pose se ajusta para que su punto más bajo
+  toque el piso: "Acostado" queda tendido en el suelo (0.34 m alto × 0.8 m largo).
+- **Foto**: JPG con exactamente lo que se ve, sin los botones.
 - **Compartir**: Web Share API → hoja de compartir del sistema → WhatsApp → grupo.
-  No existe forma de mandar una imagen directo a un grupo de WhatsApp desde una
-  web; el usuario elige el grupo. Si el navegador no soporta compartir archivos,
-  la foto se descarga.
+  Ninguna web puede mandar una imagen directo a un grupo; el usuario lo elige.
 
 ## Estructura
 
     src/poses.js               botones: clip del FBX → etiqueta
     src/App.jsx                UI: poses, cuenta regresiva, vista previa
     src/components/WattCanvas  canvas de three.js
-    src/lib/wattStage.js       escena, carga del FBX, poses, gestos
+    src/lib/wattStage.js       escena, carga del FBX, poses, gestos, AR WebXR
+    src/lib/quickLook.js       pose → USDZ para Quick Look (iPhone)
     src/lib/useCamera.js       cámara frontal/trasera
     src/lib/composePhoto.js    video + Watt → JPG
 

@@ -5,10 +5,18 @@ import {
   HemisphereLight,
   LoadingManager,
   MathUtils,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   PropertyBinding,
   Quaternion,
+  RawShaderMaterial,
+  RingGeometry,
   Scene,
+  ShadowMaterial,
   Vector3,
   WebGLRenderer,
 } from 'three'
@@ -17,6 +25,8 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 const FOV = 35
 const CAM_DIST = 3
 const HOME = { x: 0, y: 0.08, scale: 0.8, rotY: 0 }
+// Altura de Watt en AR, en metros (el modelo mide 1 unidad).
+export const AR_HEIGHT = 0.8
 
 // Texturas que el FBX referencia por ruta externa (no vienen embebidas).
 // Se resuelven por nombre de archivo contra lo que haya en src/assets/.
@@ -29,8 +39,11 @@ const WHITE_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
 
 /**
- * Escena three.js con fondo transparente, pensada para ir encima del video
- * de la camara. Watt se normaliza a 1 unidad de alto con los pies en y=0.
+ * Escena three.js de Watt. Dos modos:
+ *  - pantalla: canvas transparente encima del video de getUserMedia.
+ *  - AR (WebXR): Watt apoyado en el piso real, detectado con hit-test.
+ * Watt se normaliza a 1 unidad de alto; cada pose se ajusta para que su
+ * punto mas bajo toque y=0 (asi "Acostado" queda sobre el piso).
  */
 export class WattStage {
   constructor(canvas) {
@@ -38,6 +51,7 @@ export class WattStage {
     this.renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.setClearColor(0x000000, 0)
+    this.renderer.shadowMap.enabled = true
 
     this.scene = new Scene()
     this.camera = new PerspectiveCamera(FOV, 1, 0.05, 50)
@@ -45,21 +59,48 @@ export class WattStage {
     this.camera.lookAt(0, 0.5, 0)
 
     this.scene.add(new HemisphereLight(0xffffff, 0x9a9aa8, 2.4))
+
+    // `root` recibe los gestos y la posicion en el mundo; el modelo va en
+    // `lift`, que compensa la altura de cada pose.
+    this.root = new Group()
+    this.lift = new Group()
+    this.root.add(this.lift)
+    this.scene.add(this.root)
+
+    // La luz y la sombra viajan con Watt: en AR la sombra en el piso es lo
+    // que hace que parezca apoyado de verdad.
     const key = new DirectionalLight(0xffffff, 1.6)
     key.position.set(1.5, 2.5, 2.5)
-    this.scene.add(key)
+    key.castShadow = true
+    key.shadow.mapSize.set(1024, 1024)
+    Object.assign(key.shadow.camera, { left: -1, right: 1, top: 1, bottom: -1, near: 0.1, far: 8 })
+    key.shadow.bias = -0.002
+    this.root.add(key, key.target)
+    const floor = new Mesh(new PlaneGeometry(3, 3), new ShadowMaterial({ opacity: 0.3 }))
+    floor.rotation.x = -Math.PI / 2
+    floor.receiveShadow = true
+    this.root.add(floor)
 
-    // `root` recibe los gestos (mover, escalar, girar); el modelo va adentro.
-    this.root = new Group()
-    this.scene.add(this.root)
+    this.reticle = new Mesh(
+      new RingGeometry(0.1, 0.13, 40).rotateX(-Math.PI / 2),
+      new MeshBasicMaterial({ color: 0xffd23f }),
+    )
+    this.reticle.matrixAutoUpdate = false
+    this.reticle.visible = false
+    this.scene.add(this.reticle)
+
     this.resetTransform()
 
     this.poses = new Map()
+    this.poseLift = new Map()
     this.targets = null
+    this.targetLift = 0
     this.size = { w: 0, h: 0 }
     this.last = performance.now()
-    this.frame = this.frame.bind(this)
-    this.raf = requestAnimationFrame(this.frame)
+    this.gestureMode = 'screen'
+    this.lastMultiTouch = 0
+    this.ar = null
+    this.renderer.setAnimationLoop((t, f) => this.frame(t, f))
   }
 
   async load(url) {
@@ -87,21 +128,48 @@ export class WattStage {
     const s = 1 / size.y
     model.scale.setScalar(s)
     model.position.set(-center.x * s, -box.min.y * s, -center.z * s)
-    this.root.add(model)
+    model.traverse((o) => {
+      if (o.isMesh) o.castShadow = true
+    })
+    this.lift.add(model)
+    this.model = model
+    this.mesh = model.getObjectByProperty('isSkinnedMesh', true)
 
     // Cada pose es un clip de un solo keyframe: guardamos ese keyframe por
     // hueso y lo interpolamos a mano, sin AnimationMixer.
     for (const clip of model.animations) {
-      this.poses.set(clip.name, extractPose(model, clip))
+      const pose = extractPose(model, clip)
+      this.poses.set(clip.name, pose)
+      this.poseLift.set(clip.name, this.measureLift(pose))
     }
     return [...this.poses.keys()]
+  }
+
+  /** Cuanto hay que subir/bajar a Watt para que esta pose toque el piso. */
+  measureLift(pose) {
+    for (const t of pose) t.node[t.prop].copy(t.value)
+    return -this.posedBox().min.y
+  }
+
+  /** Caja de la malla ya deformada por los huesos, en el espacio de `lift`. */
+  posedBox() {
+    this.root.updateMatrixWorld(true)
+    this.mesh.skeleton.update()
+    this.mesh.computeBoundingBox()
+    const toLift = new Matrix4().copy(this.lift.matrixWorld).invert().multiply(this.mesh.matrixWorld)
+    return this.mesh.boundingBox.clone().applyMatrix4(toLift)
   }
 
   setPose(name, instant = false) {
     const pose = this.poses.get(name)
     if (!pose) return
     this.targets = pose
-    if (instant) for (const t of pose) t.node[t.prop].copy(t.value)
+    this.poseName = name
+    this.targetLift = this.poseLift.get(name) ?? 0
+    if (instant) {
+      for (const t of pose) t.node[t.prop].copy(t.value)
+      this.lift.position.y = this.targetLift
+    }
   }
 
   // --- gestos ---
@@ -114,7 +182,7 @@ export class WattStage {
   }
 
   scaleBy(factor) {
-    this.root.scale.setScalar(MathUtils.clamp(this.root.scale.x * factor, 0.25, 4))
+    this.root.scale.setScalar(MathUtils.clamp(this.root.scale.x * factor, 0.2, 4))
   }
 
   rotateBy(rad) {
@@ -127,7 +195,11 @@ export class WattStage {
     this.root.rotation.set(0, HOME.rotY, 0)
   }
 
-  /** Un dedo mueve; dos dedos escalan (pellizco) y giran; rueda escala. */
+  /**
+   * Un dedo mueve (solo en modo pantalla; en AR se mueve tocando el piso);
+   * dos dedos escalan (pellizco) y giran; la rueda escala.
+   * Se ignoran toques que empiezan sobre botones.
+   */
   attachGestures(el) {
     const pts = new Map()
     let prev = null
@@ -149,8 +221,9 @@ export class WattStage {
     }
 
     const down = (e) => {
-      el.setPointerCapture(e.pointerId)
+      if (e.target.closest?.('button, .preview, .banner')) return
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (pts.size >= 2) this.lastMultiTouch = performance.now()
       prev = measure()
     }
     const move = (e) => {
@@ -158,8 +231,9 @@ export class WattStage {
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
       const cur = measure()
       if (prev && cur.n === prev.n) {
-        this.moveBy(cur.mid.x - prev.mid.x, cur.mid.y - prev.mid.y)
+        if (this.gestureMode === 'screen') this.moveBy(cur.mid.x - prev.mid.x, cur.mid.y - prev.mid.y)
         if (cur.n >= 2 && prev.dist > 0) {
+          this.lastMultiTouch = performance.now()
           this.scaleBy(cur.dist / prev.dist)
           let d = cur.angle - prev.angle
           if (d > Math.PI) d -= 2 * Math.PI
@@ -170,10 +244,12 @@ export class WattStage {
       prev = cur
     }
     const up = (e) => {
-      pts.delete(e.pointerId)
+      if (!pts.delete(e.pointerId)) return
+      if (pts.size >= 1) this.lastMultiTouch = performance.now()
       prev = measure()
     }
     const wheel = (e) => {
+      if (e.target.closest?.('.poses, .preview')) return
       e.preventDefault()
       this.scaleBy(Math.exp(-e.deltaY * 0.001))
     }
@@ -192,9 +268,190 @@ export class WattStage {
     }
   }
 
+  // --- AR (WebXR, Android) ---
+
+  /**
+   * Arranca la sesion immersive-ar. Hay que llamarlo desde un toque del
+   * usuario. `overlayRoot` es el elemento HTML que queda visible encima de
+   * la camara (botones, cuenta regresiva).
+   */
+  async startAR(overlayRoot, { onPlaced, onEnd } = {}) {
+    const session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay', 'camera-access'],
+      domOverlay: { root: overlayRoot },
+    })
+
+    this.saved = {
+      position: this.root.position.clone(),
+      scale: this.root.scale.x,
+      rotY: this.root.rotation.y,
+    }
+    this.root.visible = false
+    this.gestureMode = 'world'
+
+    this.renderer.xr.enabled = true
+    this.renderer.xr.setReferenceSpaceType('local')
+    await this.renderer.xr.setSession(session)
+
+    const viewer = await session.requestReferenceSpace('viewer')
+    const hitSource = await session.requestHitTestSource({ space: viewer })
+    this.ar = {
+      session,
+      hitSource,
+      cameraAccess: session.enabledFeatures?.includes('camera-access') ?? false,
+      placed: false,
+      lastHit: null,
+      capture: null,
+    }
+
+    session.addEventListener('select', () => {
+      // Un pellizco tambien dispara `select` al soltar: lo ignoramos.
+      if (performance.now() - this.lastMultiTouch < 500) return
+      if (!this.ar?.lastHit) return
+      this.placeAt(this.ar.lastHit)
+      if (!this.ar.placed) {
+        this.ar.placed = true
+        onPlaced?.()
+      }
+    })
+
+    session.addEventListener('end', () => {
+      hitSource.cancel?.()
+      this.ar = null
+      this.renderer.xr.enabled = false
+      this.reticle.visible = false
+      this.gestureMode = 'screen'
+      this.root.visible = true
+      this.root.position.copy(this.saved.position)
+      this.root.scale.setScalar(this.saved.scale)
+      this.root.rotation.set(0, this.saved.rotY, 0)
+      this.size = { w: 0, h: 0 } // forzar resize al volver a pantalla
+      onEnd?.()
+    })
+
+    return { cameraAccess: this.ar.cameraAccess }
+  }
+
+  endAR() {
+    return this.ar?.session.end()
+  }
+
+  placeAt(hitMatrix) {
+    const pos = new Vector3().setFromMatrixPosition(hitMatrix)
+    const cam = this.renderer.xr.getCamera().position
+    if (!this.ar.placed) this.root.scale.setScalar(AR_HEIGHT)
+    this.root.position.copy(pos)
+    // Mirando hacia el telefono.
+    this.root.rotation.set(0, Math.atan2(cam.x - pos.x, cam.z - pos.z), 0)
+    this.root.visible = true
+  }
+
+  /** Foto dentro de la sesion AR: imagen de la camara + Watt. */
+  captureAR() {
+    if (!this.ar) return Promise.reject(new Error('No hay sesión AR'))
+    if (!this.ar.cameraAccess) {
+      return Promise.reject(
+        new Error('Este teléfono no permite capturar la cámara en AR. Usa la captura de pantalla del teléfono.'),
+      )
+    }
+    return new Promise((resolve, reject) => {
+      this.ar.capture = { resolve, reject }
+    })
+  }
+
+  updateAR(xrFrame) {
+    const refSpace = this.renderer.xr.getReferenceSpace()
+    const hits = xrFrame.getHitTestResults(this.ar.hitSource)
+    const pose = hits[0]?.getPose(refSpace)
+    if (pose) {
+      this.ar.lastHit = new Matrix4().fromArray(pose.transform.matrix)
+      this.reticle.matrix.copy(this.ar.lastHit)
+    }
+    // El reticulo solo se muestra mientras se busca donde poner a Watt.
+    this.reticle.visible = Boolean(pose) && !this.ar.placed
+  }
+
+  /**
+   * Se ejecuta despues del render normal, dentro del mismo frame XR: la
+   * textura de la camara solo es valida durante este callback.
+   */
+  runARCapture(xrFrame) {
+    const { resolve, reject } = this.ar.capture
+    this.ar.capture = null
+    const r = this.renderer
+    const prevTarget = r.getRenderTarget()
+    const prevAutoClear = r.autoClear
+    try {
+      const view = xrFrame.getViewerPose(r.xr.getReferenceSpace())?.views[0]
+      const camTex = view?.camera && r.xr.getCameraTexture(view.camera)
+      if (!camTex) throw new Error('La cámara no entregó imagen en este frame. Intenta de nuevo.')
+
+      // Camara normal con la misma proyeccion y posicion que la vista XR.
+      const xrCam = r.xr.getCamera().cameras[0]
+      const shot = (this.shotCamera ??= new PerspectiveCamera())
+      shot.matrixAutoUpdate = false
+      shot.matrixWorldAutoUpdate = false
+      shot.projectionMatrix.copy(xrCam.projectionMatrix)
+      shot.projectionMatrixInverse.copy(xrCam.projectionMatrixInverse)
+      shot.matrixWorld.copy(xrCam.matrixWorld)
+      shot.matrixWorldInverse.copy(xrCam.matrixWorldInverse)
+
+      // Renderizamos al canvas (no al framebuffer de XR) con XR apagado un
+      // instante: fondo = imagen de la camara, encima la escena.
+      r.xr.enabled = false
+      r.setRenderTarget(null)
+      r.autoClear = false
+      r.clear()
+      const bg = this.cameraQuad()
+      bg.material.uniforms.map.value = camTex
+      r.render(bg.scene, bg.camera)
+      r.render(this.scene, shot)
+
+      const out = document.createElement('canvas')
+      out.width = this.canvas.width
+      out.height = this.canvas.height
+      out.getContext('2d').drawImage(this.canvas, 0, 0)
+      out.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo generar la foto'))), 'image/jpeg', 0.92)
+    } catch (e) {
+      reject(e)
+    } finally {
+      r.autoClear = prevAutoClear
+      r.xr.enabled = true
+      r.setRenderTarget(prevTarget)
+    }
+  }
+
+  cameraQuad() {
+    if (this.bgQuad) return this.bgQuad
+    const material = new RawShaderMaterial({
+      uniforms: { map: { value: null } },
+      depthTest: false,
+      depthWrite: false,
+      // La imagen de la camara ya viene en sRGB: se copia sin convertir.
+      vertexShader: `
+        attribute vec3 position;
+        varying vec2 vUv;
+        void main() {
+          vUv = position.xy * 0.5 + 0.5;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }`,
+      fragmentShader: `
+        precision mediump float;
+        uniform sampler2D map;
+        varying vec2 vUv;
+        void main() { gl_FragColor = texture2D(map, vUv); }`,
+    })
+    const scene = new Scene()
+    scene.add(new Mesh(new PlaneGeometry(2, 2), material))
+    this.bgQuad = { scene, camera: new OrthographicCamera(), material }
+    return this.bgQuad
+  }
+
   // --- render ---
 
   resizeIfNeeded() {
+    if (this.renderer.xr.isPresenting) return
     const w = this.canvas.clientWidth
     const h = this.canvas.clientHeight
     if (!w || !h || (w === this.size.w && h === this.size.h)) return
@@ -204,8 +461,7 @@ export class WattStage {
     this.camera.updateProjectionMatrix()
   }
 
-  frame(now) {
-    this.raf = requestAnimationFrame(this.frame)
+  frame(now, xrFrame) {
     const dt = Math.min((now - this.last) / 1000, 0.1)
     this.last = now
 
@@ -215,6 +471,14 @@ export class WattStage {
         if (t.prop === 'quaternion') t.node.quaternion.slerp(t.value, k)
         else t.node[t.prop].lerp(t.value, k)
       }
+      this.lift.position.y += (this.targetLift - this.lift.position.y) * k
+    }
+
+    if (xrFrame && this.ar) {
+      this.updateAR(xrFrame)
+      this.renderer.render(this.scene, this.camera)
+      if (this.ar.capture) this.runARCapture(xrFrame)
+      return
     }
     this.renderNow()
   }
@@ -230,7 +494,8 @@ export class WattStage {
   }
 
   dispose() {
-    cancelAnimationFrame(this.raf)
+    this.renderer.setAnimationLoop(null)
+    this.ar?.session.end()
     this.renderer.dispose()
   }
 }
