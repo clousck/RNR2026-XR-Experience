@@ -238,7 +238,10 @@ export class WattStage {
           let d = cur.angle - prev.angle
           if (d > Math.PI) d -= 2 * Math.PI
           if (d < -Math.PI) d += 2 * Math.PI
-          this.rotateBy(d)
+          // En pantalla el eje Y apunta hacia abajo: un giro horario de los
+          // dedos da un angulo positivo, y rotation.y positivo gira a Watt en
+          // sentido antihorario visto desde arriba. De ahi el signo.
+          this.rotateBy(-d)
         }
       }
       prev = cur
