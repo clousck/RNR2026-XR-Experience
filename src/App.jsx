@@ -6,6 +6,7 @@ import { composePhoto } from './lib/composePhoto'
 import { buildPoseUSDZ, openQuickLook, supportsQuickLook } from './lib/quickLook'
 import { POSES, initialPose } from './poses'
 import { FACES, initialFace } from './faces'
+import { IS_IOS, detectInAppBrowser } from './lib/inAppBrowser'
 import './App.css'
 
 const START_POSE = initialPose()
@@ -15,6 +16,7 @@ const ALL_FACE_URLS = FACES.map((f) => f.url)
 // ?nocam: no pide la camara (util para probar en escritorio / capturas).
 const NO_CAM = new URLSearchParams(window.location.search).has('nocam')
 const COUNTDOWN = 3
+const IN_APP = detectInAppBrowser()
 // Controles que no deben disparar el "tocar el piso" de WebXR.
 const UI_SELECTOR = 'button, .top-bar, .bottom-bar, .preview, .banner'
 
@@ -56,8 +58,10 @@ export default function App() {
   const [usdz, setUsdz] = useState(null)
   const [exited, setExited] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [glLost, setGlLost] = useState(false)
+  const [inAppDismissed, setInAppDismissed] = useState(false)
 
-  const { videoRef, status: camStatus, error: camError, retry: retryCam } = useCamera(
+  const { videoRef, status: camStatus, error: camError, retry: retryCam, resume: resumeCam } = useCamera(
     facing,
     !NO_CAM && !inAR && !exited,
   )
@@ -89,6 +93,25 @@ export default function App() {
     if (!loaded) return
     return stageRef.current.attachGestures(boothRef.current)
   }, [loaded])
+
+  // Si iOS le quita la GPU a la pagina, avisar (three.js intenta recuperarla).
+  useEffect(() => {
+    if (!loaded) return
+    const stage = stageRef.current
+    stage.onContextChange = setGlLost
+    return () => {
+      stage.onContextChange = null
+    }
+  }, [loaded])
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setNotice(`Enlace copiado. Pégalo en ${IS_IOS ? 'Safari' : 'Chrome'}.`)
+    } catch {
+      setNotice(`Copia este enlace y ábrelo en ${IS_IOS ? 'Safari' : 'Chrome'}: ${window.location.href}`)
+    }
+  }
 
   // En AR, tocar un boton no debe mover a Watt.
   useEffect(() => {
@@ -278,6 +301,30 @@ export default function App() {
           {camError}
           <button onClick={retryCam}>Reintentar</button>
         </div>
+      )}
+
+      {IN_APP && !inAppDismissed && (
+        <div className="banner in-app">
+          <span>
+            Estás en el navegador de {IN_APP}: la cámara puede verse en negro. Toca ··· y elige
+            «Abrir en {IS_IOS ? 'Safari' : 'el navegador'}».
+          </span>
+          <button onClick={copyLink}>Copiar enlace</button>
+          <button onClick={() => setInAppDismissed(true)} aria-label="Cerrar aviso">✕</button>
+        </div>
+      )}
+
+      {glLost && (
+        <div className="banner">
+          El gráfico 3D se interrumpió (el teléfono liberó memoria).
+          <button onClick={() => window.location.reload()}>Recargar</button>
+        </div>
+      )}
+
+      {!NO_CAM && !inAR && !exited && camStatus === 'needs-tap' && (
+        <button className="tap-to-start" onClick={resumeCam}>
+          Toca para activar la cámara
+        </button>
       )}
 
       {notice && (

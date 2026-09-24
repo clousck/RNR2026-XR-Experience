@@ -6,6 +6,8 @@ const MESSAGES = {
   NotReadableError: 'La cámara está siendo usada por otra app.',
   OverconstrainedError: 'Esta cámara no está disponible.',
 }
+const NO_FRAMES =
+  'La cámara se abrió pero no muestra imagen. Si abriste el enlace desde WeChat, Instagram u otra app, ábrelo en Safari o Chrome.'
 
 // Con ImageCapture (Chrome/Android) la foto sale del sensor a resolucion
 // completa, asi que la vista previa puede ser 1080p. Sin ImageCapture
@@ -15,9 +17,16 @@ const PREVIEW_SIZE =
     ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
     : { width: { ideal: 3840 }, height: { ideal: 2160 } }
 
+const FRAME_TIMEOUT = 5000
+
 /**
  * Abre la camara (`user` = frontal, `environment` = trasera) y la conecta al
  * <video> de videoRef. `enabled: false` no pide la camara (modo ?nocam).
+ *
+ * Estados: starting → ready | needs-tap | error.
+ * `needs-tap`: el navegador bloqueo la reproduccion automatica (iPhone en
+ * modo de bajo consumo, por ejemplo) y hay que llamar a resume() desde un
+ * toque del usuario.
  */
 export function useCamera(facing, enabled = true) {
   const videoRef = useRef(null)
@@ -40,8 +49,17 @@ export function useCamera(facing, enabled = true) {
         if (cancelled) return
         const video = videoRef.current
         video.srcObject = stream
-        await video.play().catch(() => {})
+        try {
+          await video.play()
+        } catch {
+          if (!cancelled) setState({ status: 'needs-tap', error: null })
+          return
+        }
+        if (cancelled) return
         setState({ status: 'ready', error: null })
+        if (!(await hasFrames(video, FRAME_TIMEOUT)) && !cancelled) {
+          setState({ status: 'error', error: NO_FRAMES })
+        }
       } catch (e) {
         if (!cancelled) setState({ status: 'error', error: MESSAGES[e.name] ?? e.message })
       }
@@ -54,5 +72,37 @@ export function useCamera(facing, enabled = true) {
     }
   }, [facing, enabled, attempt])
 
-  return { videoRef, ...state, retry: () => setAttempt((n) => n + 1) }
+  /** Reintenta reproducir el video. Llamarlo desde un toque del usuario. */
+  const resume = async () => {
+    const video = videoRef.current
+    try {
+      await video.play()
+      setState({ status: 'ready', error: null })
+      if (!(await hasFrames(video, FRAME_TIMEOUT))) setState({ status: 'error', error: NO_FRAMES })
+    } catch {
+      setState({ status: 'error', error: NO_FRAMES })
+    }
+  }
+
+  return { videoRef, ...state, retry: () => setAttempt((n) => n + 1), resume }
+}
+
+/** ¿El video entrega cuadros de verdad? (no solo "abierto" en negro) */
+function hasFrames(video, timeout) {
+  return new Promise((resolve) => {
+    const done = (ok) => {
+      clearTimeout(timer)
+      resolve(ok)
+    }
+    const timer = setTimeout(() => done(video.videoWidth > 0 && video.currentTime > 0), timeout)
+    if (video.requestVideoFrameCallback) {
+      video.requestVideoFrameCallback(() => done(video.videoWidth > 0))
+    } else {
+      const check = () => {
+        if (video.videoWidth > 0 && video.currentTime > 0) done(true)
+        else if (!video.paused) requestAnimationFrame(check)
+      }
+      check()
+    }
+  })
 }

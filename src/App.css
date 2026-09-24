@@ -327,3 +327,24 @@
   border-color: #7fd1ff;
   background: rgba(127, 209, 255, 0.18);
 }
+
+/* --- avisos de compatibilidad --- */
+.banner.in-app { flex-wrap: wrap; background: rgba(20, 50, 90, 0.95); }
+.banner.in-app span { flex: 1 1 100%; }
+.banner.in-app button:first-of-type { margin-left: 0; }
+
+.tap-to-start {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  padding: 1rem 1.5rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #1a1400;
+  font-size: 1.05rem;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}

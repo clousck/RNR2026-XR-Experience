@@ -62,7 +62,8 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
     src/components/WattCanvas  canvas de three.js
     src/lib/wattStage.js       escena, carga del FBX, poses, gestos, AR WebXR
     src/lib/quickLook.js       pose → USDZ para Quick Look (iPhone)
-    src/lib/useCamera.js       cámara frontal/trasera
+    src/lib/useCamera.js       cámara frontal/trasera, autoplay bloqueado, sin imagen
+    src/lib/inAppBrowser.js    detecta WeChat/Instagram/etc.
     src/lib/useDeviceRotation.js  teléfono de lado con la rotación bloqueada
     src/lib/composePhoto.js    video + Watt → JPG
 
@@ -113,6 +114,22 @@ certificado una vez. Para probar desde el celular usa `preview`, no `dev`:
 en dev three.js se sirve sin minificar y tarda mucho en cargar por wifi.
 
 `?nocam` en la URL no pide la cámara (fondo liso), útil en escritorio.
+
+## Si la cámara se ve en negro
+
+La app detecta estos casos y avisa en pantalla:
+
+- **Navegador dentro de una app** (WeChat, QQ, Weibo, Douyin, Instagram,
+  Facebook…): la cámara suele verse en negro. Aviso con instrucciones para
+  abrir en Safari/Chrome y botón para copiar el enlace. En China los QR se
+  escanean casi siempre con WeChat.
+- **Reproducción automática bloqueada** (iPhone en modo de bajo consumo): botón
+  "Toca para activar la cámara".
+- **Cámara abierta sin imagen** durante 5 s: aviso para reintentar o cambiar de
+  navegador.
+- **Gráfico 3D perdido** (iOS le quita la GPU a la página por memoria): aviso con
+  botón para recargar; three.js intenta recuperarlo solo. La foto se renderiza por
+  mosaicos de 1024×1024 para no pedir de golpe un canvas enorme a la GPU.
 
 ## Deploy en Cloudflare Pages
 

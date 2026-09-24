@@ -28,6 +28,8 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { rotateCanvas, toJpeg } from './composePhoto'
 
 const FOV = 35
+// Tamaño de los mosaicos con que se renderiza la foto (ver renderAtSize).
+const TILE = 1024
 // Para la vista previa basta con x2; la foto se renderiza aparte a su resolucion.
 const SCREEN_PIXEL_RATIO = () => Math.min(window.devicePixelRatio, 2)
 const CAM_DIST = 3
@@ -103,6 +105,22 @@ export class WattStage {
     this.lastMultiTouch = 0
     this.ar = null
     this.renderer.setAnimationLoop((t, f) => this.frame(t, f))
+
+    // iOS puede quitarle la GPU a la pagina (memoria, app en segundo plano).
+    // three.js intenta recuperar el contexto; mientras tanto avisamos.
+    this.contextLost = false
+    this.onContextChange = null
+    this.handleLost = () => {
+      this.contextLost = true
+      this.onContextChange?.(true)
+    }
+    this.handleRestored = () => {
+      this.contextLost = false
+      this.size = { w: 0, h: 0 }
+      this.onContextChange?.(false)
+    }
+    canvas.addEventListener('webglcontextlost', this.handleLost)
+    canvas.addEventListener('webglcontextrestored', this.handleRestored)
   }
 
   /**
@@ -569,29 +587,42 @@ export class WattStage {
    */
   renderAtSize(w, h) {
     const r = this.renderer
-    const gl = r.getContext()
-    const [maxW, maxH] = gl.getParameter(gl.MAX_VIEWPORT_DIMS)
-    const limit = Math.min(maxW, maxH, r.capabilities.maxTextureSize)
-    const s = Math.min(1, limit / Math.max(w, h))
-    const W = Math.round(w * s)
-    const H = Math.round(h * s)
+    if (this.contextLost || r.getContext().isContextLost()) {
+      throw new Error('Se perdió el gráfico 3D (el teléfono liberó memoria). Recarga la página e intenta de nuevo.')
+    }
+    const W = Math.round(w)
+    const H = Math.round(h)
 
-    const prevRatio = r.getPixelRatio()
-    r.setPixelRatio(1)
-    r.setSize(W, H, false)
-    this.camera.aspect = W / H
-    this.applyCamera()
-    r.render(this.scene, this.camera)
-
+    // Se renderiza por mosaicos de TILE×TILE y se juntan en un canvas 2D. Un
+    // canvas WebGL del tamaño completo de la foto (con antialiasing) puede
+    // superar la memoria de GPU que iOS le da a la pagina y perder el contexto.
     const out = document.createElement('canvas')
     out.width = W
     out.height = H
-    out.getContext('2d').drawImage(this.canvas, 0, 0)
+    const ctx = out.getContext('2d')
 
-    // Volver al tamaño de pantalla en la misma tarea: no se ve parpadeo.
-    r.setPixelRatio(prevRatio)
-    this.size = { w: 0, h: 0 }
-    this.renderNow()
+    const prevRatio = r.getPixelRatio()
+    r.setPixelRatio(1)
+    this.camera.aspect = W / H
+    this.applyCamera()
+    try {
+      for (let y = 0; y < H; y += TILE) {
+        for (let x = 0; x < W; x += TILE) {
+          const tw = Math.min(TILE, W - x)
+          const th = Math.min(TILE, H - y)
+          r.setSize(tw, th, false)
+          this.camera.setViewOffset(W, H, x, y, tw, th)
+          r.render(this.scene, this.camera)
+          ctx.drawImage(this.canvas, 0, 0, tw, th, x, y, tw, th)
+        }
+      }
+    } finally {
+      // Volver al tamaño de pantalla en la misma tarea: no se ve parpadeo.
+      this.camera.clearViewOffset()
+      r.setPixelRatio(prevRatio)
+      this.size = { w: 0, h: 0 }
+      this.renderNow()
+    }
     return out
   }
 
@@ -606,6 +637,8 @@ export class WattStage {
   }
 
   dispose() {
+    this.canvas.removeEventListener('webglcontextlost', this.handleLost)
+    this.canvas.removeEventListener('webglcontextrestored', this.handleRestored)
     this.renderer.setAnimationLoop(null)
     this.ar?.session.end()
     this.renderer.dispose()
