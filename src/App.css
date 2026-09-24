@@ -299,3 +299,31 @@
   font-weight: 700;
   background: rgba(0, 0, 0, 0.35);
 }
+
+/* --- caras --- */
+.faces {
+  display: flex;
+  gap: 0.4rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0 0.75rem;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+
+.faces::-webkit-scrollbar { display: none; }
+
+.face {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: var(--panel);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.face.active {
+  border-color: #7fd1ff;
+  background: rgba(127, 209, 255, 0.18);
+}

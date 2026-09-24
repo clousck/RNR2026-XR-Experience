@@ -57,6 +57,7 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
 ## Estructura
 
     src/poses.js               botones: clip del FBX → etiqueta
+    src/faces.js               botones de cara: textura → etiqueta
     src/App.jsx                UI: poses, cuenta regresiva, vista previa
     src/components/WattCanvas  canvas de three.js
     src/lib/wattStage.js       escena, carga del FBX, poses, gestos, AR WebXR
@@ -84,17 +85,21 @@ botones, edita `src/poses.js`.
 
 `?pose=Pose%203` en la URL elige la pose inicial.
 
-## ⚠️ Textura de Watt
+## Caras de Watt
 
-La textura **no está embebida** en el FBX: el archivo apunta a
-`C:\Users\Oscar\Desktop\U\UIES ED Games\gatoieeee.png`, una ruta de otra PC.
-Para que Watt salga con sus colores, copia ese PNG a `src/assets/gatoieeee.png`.
-La app lo busca por nombre de archivo, así que la ruta original da igual.
+La textura no viene embebida en el FBX (apunta a `C:\Users\Oscar\...\gatoieeee.png`,
+una ruta de otra PC). La app la reemplaza por las caras de `src/assets/`:
 
-Mientras falte, Watt se ve gris claro (color base del material) y la consola
-avisa `[watt] Faltan texturas: gatoieeee.png`.
+| Archivo | Botón | Boca / ojos |
+|---|---|---|
+| `watt-cara-1.png` | 😺 Tranquilo | boca ":3", ojos normales (inicial) |
+| `watt-cara-2.png` | 😸 Feliz | boca abierta, ojos normales |
+| `watt-cara-3.png` | 😵 Mareado | lengua afuera, ojos en espiral |
 
-Alternativa: reexportar desde Blender con *Path Mode: Copy* + *Embed Textures*.
+Cada archivo es la textura completa del modelo (1024×1024); solo cambian boca y
+ojos. Las tres se precargan, así que el cambio es instantáneo, y la foto y el
+USDZ de iPhone llevan la cara elegida. Para agregar o renombrar caras, edita
+`src/faces.js`. `?cara=2` en la URL elige la cara inicial.
 
 ## Uso
 

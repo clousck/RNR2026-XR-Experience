@@ -5,9 +5,13 @@ import { requestMotionPermission, useDeviceRotation } from './lib/useDeviceRotat
 import { composePhoto } from './lib/composePhoto'
 import { buildPoseUSDZ, openQuickLook, supportsQuickLook } from './lib/quickLook'
 import { POSES, initialPose } from './poses'
+import { FACES, initialFace } from './faces'
 import './App.css'
 
 const START_POSE = initialPose()
+const START_FACE = initialFace()
+const faceUrl = (id) => FACES.find((f) => f.id === id).url
+const ALL_FACE_URLS = FACES.map((f) => f.url)
 // ?nocam: no pide la camara (util para probar en escritorio / capturas).
 const NO_CAM = new URLSearchParams(window.location.search).has('nocam')
 const COUNTDOWN = 3
@@ -39,6 +43,7 @@ export default function App() {
   // Arranca con la trasera; el boton ⇄ cambia a la frontal (selfie).
   const [facing, setFacing] = useState('environment')
   const [pose, setPose] = useState(START_POSE)
+  const [face, setFace] = useState(START_FACE)
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState(null)
   const [count, setCount] = useState(null)
@@ -99,7 +104,10 @@ export default function App() {
     if (arMode !== 'quicklook' || !loaded) return
     let cancelled = false
     let url = null
-    buildPoseUSDZ(stageRef.current, pose)
+    const stage = stageRef.current
+    stage
+      .texture(faceUrl(face))
+      .then((map) => buildPoseUSDZ(stage, pose, map))
       .then((u) => {
         url = u
         if (cancelled) URL.revokeObjectURL(u)
@@ -111,7 +119,7 @@ export default function App() {
       if (url) URL.revokeObjectURL(url)
       setUsdz(null)
     }
-  }, [arMode, loaded, pose])
+  }, [arMode, loaded, pose, face])
 
   const enterAR = async () => {
     if (arMode === 'quicklook') {
@@ -254,6 +262,9 @@ export default function App() {
           stageRef={stageRef}
           pose={pose}
           initialPose={START_POSE}
+          face={faceUrl(face)}
+          initialFace={faceUrl(START_FACE)}
+          allFaces={ALL_FACE_URLS}
           onLoaded={() => setLoaded(true)}
           onError={(e) => setLoadError(e.message || String(e))}
         />
@@ -312,6 +323,19 @@ export default function App() {
         {arMode === 'quicklook' && !inAR && (
           <p className="ar-note">En AR, toma la foto con el botón de foto de esa pantalla o con una captura de pantalla.</p>
         )}
+        <div className="faces" role="group" aria-label="Cara de Watt">
+          {FACES.map((f) => (
+            <button
+              key={f.id}
+              className={f.id === face ? 'face active' : 'face'}
+              onClick={() => setFace(f.id)}
+              disabled={!loaded}
+              aria-pressed={f.id === face}
+            >
+              <span aria-hidden="true">{f.emoji}</span> {f.label}
+            </button>
+          ))}
+        </div>
         <div className="poses">
           {POSES.map((p) => (
             <button

@@ -19,6 +19,7 @@ import {
   RingGeometry,
   Scene,
   ShadowMaterial,
+  TextureLoader,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -34,13 +35,7 @@ const HOME = { x: 0, y: 0.08, scale: 0.8, rotY: 0 }
 // Altura de Watt en AR, en metros (el modelo mide 1 unidad).
 export const AR_HEIGHT = 0.8
 
-// Texturas que el FBX referencia por ruta externa (no vienen embebidas).
-// Se resuelven por nombre de archivo contra lo que haya en src/assets/.
-const ASSET_TEXTURES = Object.fromEntries(
-  Object.entries(
-    import.meta.glob('../assets/*.{png,jpg,jpeg,webp}', { eager: true, query: '?url', import: 'default' }),
-  ).map(([path, url]) => [path.split('/').pop().toLowerCase(), url]),
-)
+// Si no se pasa textura, un pixel blanco: sin textura Watt se ve negro.
 const WHITE_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
 
@@ -110,24 +105,18 @@ export class WattStage {
     this.renderer.setAnimationLoop((t, f) => this.frame(t, f))
   }
 
-  async load(url) {
-    // El FBX guarda la ruta de la textura de la PC donde se exporto
-    // (C:\Users\...\gatoieeee.png). La buscamos por nombre en src/assets/
-    // y, si no esta, usamos un pixel blanco: sin esto Watt se ve negro.
-    const missing = new Set()
+  /**
+   * Carga el FBX. La textura no viene embebida: el FBX apunta a una ruta de
+   * la PC donde se exporto (C:\Users\...\gatoieeee.png), asi que cualquier
+   * imagen que pida se reemplaza por `texture` (la cara inicial).
+   */
+  async load(url, { texture } = {}) {
     const manager = new LoadingManager()
     manager.setURLModifier((u) => {
       if (u === url || u.startsWith('data:') || u.startsWith('blob:')) return u
-      const name = decodeURIComponent(u).split(/[\\/]/).pop().toLowerCase()
-      if (ASSET_TEXTURES[name]) return ASSET_TEXTURES[name]
-      missing.add(name)
-      return WHITE_PX
+      return texture ?? WHITE_PX
     })
     const model = await new FBXLoader(manager).loadAsync(url)
-    if (missing.size) {
-      console.warn(`[watt] Faltan texturas: ${[...missing].join(', ')}. Copialas a src/assets/.`)
-    }
-    this.missingTextures = [...missing]
 
     const box = new Box3().setFromObject(model)
     const size = box.getSize(new Vector3())
@@ -141,6 +130,11 @@ export class WattStage {
     this.lift.add(model)
     this.model = model
     this.mesh = model.getObjectByProperty('isSkinnedMesh', true)
+    this.material = Array.isArray(this.mesh.material) ? this.mesh.material[0] : this.mesh.material
+    // El FBX de Blender trae el color base en 0.8, que oscurece la textura.
+    if (this.material.map) this.material.color.set(0xffffff)
+    this.faceUrl = texture
+    this.textures = new Map(texture && this.material.map ? [[texture, this.material.map]] : [])
 
     // Cada pose es un clip de un solo keyframe: guardamos ese keyframe por
     // hueso y lo interpolamos a mano, sin AnimationMixer.
@@ -165,6 +159,40 @@ export class WattStage {
     this.mesh.computeBoundingBox()
     const toLift = new Matrix4().copy(this.lift.matrixWorld).invert().multiply(this.mesh.matrixWorld)
     return this.mesh.boundingBox.clone().applyMatrix4(toLift)
+  }
+
+  /** Precarga texturas (caras) para que el cambio sea instantaneo. */
+  preloadTextures(urls) {
+    return Promise.all(urls.map((u) => this.texture(u)))
+  }
+
+  texture(url) {
+    if (!this.textures.has(url)) {
+      const base = this.material.map
+      const promise = new TextureLoader().loadAsync(url).then((tex) => {
+        // Mismos ajustes que la textura que creo el FBXLoader (UV, color).
+        if (base) {
+          tex.flipY = base.flipY
+          tex.wrapS = base.wrapS
+          tex.wrapT = base.wrapT
+          tex.colorSpace = base.colorSpace
+        }
+        tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy()
+        this.textures.set(url, tex)
+        return tex
+      })
+      this.textures.set(url, promise)
+    }
+    return Promise.resolve(this.textures.get(url))
+  }
+
+  /** Cambia la cara (la textura completa del modelo). */
+  async setFace(url) {
+    this.faceUrl = url
+    const tex = await this.texture(url)
+    if (this.faceUrl !== url) return // se eligio otra cara mientras cargaba
+    this.material.map = tex
+    this.material.needsUpdate = true
   }
 
   setPose(name, instant = false) {

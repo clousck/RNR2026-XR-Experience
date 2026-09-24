@@ -12,7 +12,7 @@ export function supportsQuickLook() {
  * con el punto mas bajo en el piso. Quick Look no soporta esqueletos con
  * poses a eleccion, asi que "horneamos" la deformacion en una malla estatica.
  */
-export async function buildPoseUSDZ(stage, poseName) {
+export async function buildPoseUSDZ(stage, poseName, map) {
   const pose = stage.poses.get(poseName)
   const { mesh, lift } = stage
 
@@ -36,7 +36,8 @@ export async function buildPoseUSDZ(stage, poseName) {
   const src = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
   const material = new MeshStandardMaterial({
     color: src.color,
-    map: src.map,
+    // `map` = la cara elegida; si no se pasa, la que tenga el modelo ahora.
+    map: map ?? src.map,
     roughness: 0.55,
     metalness: 0,
   })
