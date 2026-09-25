@@ -8,6 +8,8 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
+  NeutralToneMapping,
   OrthographicCamera,
   PerspectiveCamera,
   Plane,
@@ -28,6 +30,10 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { rotateCanvas, toJpeg } from './composePhoto'
 
 const FOV = 35
+// Iluminacion (ver constructor). ROUGHNESS: 0 = espejo, 1 = totalmente mate.
+export const ROUGHNESS = 0.7
+const FILL_LIGHT = 2.3
+const KEY_LIGHT = 1.8
 // Tamaño de los mosaicos con que se renderiza la foto (ver renderAtSize).
 const TILE = 1024
 // Para la vista previa basta con x2; la foto se renderiza aparte a su resolucion.
@@ -55,6 +61,9 @@ export class WattStage {
     this.renderer.setPixelRatio(SCREEN_PIXEL_RATIO())
     this.renderer.setClearColor(0x000000, 0)
     this.renderer.shadowMap.enabled = true
+    // Tone mapping "Neutral" (Khronos PBR Neutral): deja intactos los colores
+    // normales y solo suaviza lo que se pasaria de blanco, sin cambiar el tono.
+    this.renderer.toneMapping = NeutralToneMapping
 
     this.scene = new Scene()
     this.camera = new PerspectiveCamera(FOV, 1, 0.05, 50)
@@ -62,7 +71,11 @@ export class WattStage {
     this.applyCamera()
     this.raycaster = new Raycaster()
 
-    this.scene.add(new HemisphereLight(0xffffff, 0x9a9aa8, 2.4))
+    // Presupuesto de luz: con luces fisicas, intensidad π ilumina al 100% del
+    // color de la textura. FILL_LIGHT/KEY_LIGHT estan calibrados midiendo el
+    // render contra la textura: las zonas iluminadas llegan a su color (blanco
+    // ~242 de 250) sin pixeles quemados, y los costados quedan en sombra.
+    this.scene.add(new HemisphereLight(0xffffff, 0x8f8f9c, FILL_LIGHT))
 
     // `root` recibe los gestos y la posicion en el mundo; el modelo va en
     // `lift`, que compensa la altura de cada pose.
@@ -73,7 +86,7 @@ export class WattStage {
 
     // La luz y la sombra viajan con Watt: en AR la sombra en el piso es lo
     // que hace que parezca apoyado de verdad.
-    const key = new DirectionalLight(0xffffff, 1.6)
+    const key = new DirectionalLight(0xffffff, KEY_LIGHT)
     key.position.set(1.5, 2.5, 2.5)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
@@ -148,9 +161,13 @@ export class WattStage {
     this.lift.add(model)
     this.model = model
     this.mesh = model.getObjectByProperty('isSkinnedMesh', true)
-    this.material = Array.isArray(this.mesh.material) ? this.mesh.material[0] : this.mesh.material
-    // El FBX de Blender trae el color base en 0.8, que oscurece la textura.
-    if (this.material.map) this.material.color.set(0xffffff)
+    // El FBX trae un MeshPhongMaterial "plastico brillante" (especular 0.8,
+    // valor por defecto de Blender) con el color base en 0.8. Lo cambiamos por
+    // un material PBR mate con color base blanco: la textura se ve tal cual.
+    const phong = Array.isArray(this.mesh.material) ? this.mesh.material[0] : this.mesh.material
+    this.material = new MeshStandardMaterial({ map: phong.map, roughness: ROUGHNESS, metalness: 0 })
+    this.mesh.material = this.material
+    phong.dispose()
     this.faceUrl = texture
     this.textures = new Map(texture && this.material.map ? [[texture, this.material.map]] : [])
 

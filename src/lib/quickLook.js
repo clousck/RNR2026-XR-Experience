@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Matrix3, Matrix4, Mesh, MeshStandardMaterial, Vector3 } from 'three'
 import { USDZExporter } from 'three/examples/jsm/exporters/USDZExporter.js'
-import { AR_HEIGHT } from './wattStage'
+import { AR_HEIGHT, ROUGHNESS } from './wattStage'
 
 /** Safari en iOS abre AR Quick Look con <a rel="ar">. */
 export function supportsQuickLook() {
@@ -38,7 +38,7 @@ export async function buildPoseUSDZ(stage, poseName, map) {
     color: src.color,
     // `map` = la cara elegida; si no se pasa, la que tenga el modelo ahora.
     map: map ?? src.map,
-    roughness: 0.55,
+    roughness: ROUGHNESS,
     metalness: 0,
   })
 
