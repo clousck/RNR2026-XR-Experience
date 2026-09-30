@@ -1,10 +1,21 @@
 import { Suspense, lazy } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router'
+import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router'
 
-// El booth trae three.js y el FBX de Watt (~1.5 MB): se carga solo al abrirlo.
+// Cada parte se descarga solo cuando se abre: el booth trae three.js y el
+// FBX de Watt (~1.5 MB), el panel no lo necesita ningun participante.
 const WattBooth = lazy(() => import('../features/booth/WattBooth'))
+const EventApp = lazy(() => import('../features/quest/EventApp'))
+const EnterCode = lazy(() => import('../features/quest/EnterCode'))
+const AdminApp = lazy(() => import('../features/admin/AdminApp'))
 
-const loading = <div className="overlay-msg">Cargando a Watt…</div>
+const loading = <div className="overlay-msg">Cargando…</div>
+
+/** Booth libre dentro de un evento: "Salir" vuelve a los retos. */
+function EventBooth() {
+  const { slug } = useParams()
+  const navigate = useNavigate()
+  return <WattBooth onExit={() => navigate(`/e/${slug}/perfil`)} />
+}
 
 export default function App() {
   return (
@@ -13,7 +24,10 @@ export default function App() {
         <Routes>
           {/* La raiz sigue siendo el booth: hay QRs impresos que apuntan aca. */}
           <Route path="/" element={<WattBooth />} />
-          <Route path="/e/:slug/watt" element={<WattBooth />} />
+          <Route path="/entrar" element={<EnterCode />} />
+          <Route path="/e/:slug/watt" element={<EventBooth />} />
+          <Route path="/e/:slug/*" element={<EventApp />} />
+          <Route path="/admin/*" element={<AdminApp />} />
           <Route path="*" element={<WattBooth />} />
         </Routes>
       </Suspense>

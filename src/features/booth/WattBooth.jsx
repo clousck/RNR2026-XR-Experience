@@ -90,8 +90,16 @@ export default function WattBooth({ mode = 'free', onSubmit, onExit }) {
     return () => el.removeEventListener('pointerdown', requestMotionPermission)
   }, [])
 
+  // En un reto, Quick Look (iPhone) no sirve: abre fuera de la pagina y la
+  // foto nunca vuelve. Se queda en el modo camara, que si entrega la foto.
   useEffect(() => {
-    detectAR().then(setArMode)
+    detectAR().then((m) => setArMode(challenge && m === 'quicklook' ? 'none' : m))
+  }, [challenge])
+
+  // La pagina no se desplaza mientras el booth esta abierto.
+  useEffect(() => {
+    document.documentElement.classList.add('booth-open')
+    return () => document.documentElement.classList.remove('booth-open')
   }, [])
 
   // Gestos sobre toda la pagina (no solo el canvas): en AR el canvas no se ve
@@ -269,6 +277,7 @@ export default function WattBooth({ mode = 'free', onSubmit, onExit }) {
 
   const submit = async () => {
     await leaveARFirst()
+    URL.revokeObjectURL(photo.url)
     onSubmit?.(photo.blob)
   }
 

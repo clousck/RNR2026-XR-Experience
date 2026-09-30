@@ -1,0 +1,600 @@
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router'
+import {
+  addTeams,
+  createBadge,
+  deleteBadge,
+  deleteEvent,
+  deleteTeam,
+  duplicateEvent,
+  listBadges,
+  listChallenges,
+  listTeams,
+  updateBadge,
+  updateEvent,
+  updateTeam,
+} from '../../api/admin'
+import { useAsync } from '../../shared/useAsync'
+import { ErrorBox } from '../quest/ui'
+import { useAdmin, useEventAdmin } from './AdminContext'
+import QrImage, { eventJoinUrl, fromLocalInput, toLocalInput } from './QrImage'
+
+export default function SettingsAdmin() {
+  const { isAdmin } = useAdmin()
+  return (
+    <section className="admin-page narrow">
+      {!isAdmin && <p className="notice">Solo un administrador puede cambiar los ajustes.</p>}
+      <StatusCard />
+      <AccessCard />
+      <EventCard />
+      <TeamsCard />
+      <LevelsCard />
+      <BadgesCard />
+      {isAdmin && <DuplicateCard />}
+      {isAdmin && <DangerCard />}
+    </section>
+  )
+}
+
+function useSaver() {
+  const { event, setEvent } = useEventAdmin()
+  const [error, setError] = useState(null)
+  const [saved, setSaved] = useState(false)
+  const save = async (body) => {
+    setError(null)
+    setSaved(false)
+    try {
+      const { event: updated } = await updateEvent(event.id, body)
+      setEvent(updated)
+      setSaved(true)
+      return true
+    } catch (e) {
+      setError(e)
+      return false
+    }
+  }
+  return { save, error, saved }
+}
+
+function StatusCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const { save, error } = useSaver()
+  const setStatus = (status, question) => () => (!question || window.confirm(question)) && save({ status })
+
+  return (
+    <div className="card">
+      <h3>Estado del evento</h3>
+      {event.status === 'draft' && <p>📝 En borrador: los participantes aún no pueden entrar. Prepara retos y Ramas, y ábrelo el día del evento.</p>}
+      {event.status === 'open' && <p>🟢 Abierto: se puede entrar y completar retos.</p>}
+      {event.status === 'closed' && <p>🏁 Cerrado: no se aceptan nuevos participantes ni envíos. El ranking queda congelado y la galería sigue visible.</p>}
+      {isAdmin && (
+        <div className="row">
+          {event.status !== 'open' && (
+            <button className="btn primary" onClick={setStatus('open', event.status === 'closed' ? '¿Reabrir el evento?' : null)}>
+              {event.status === 'closed' ? 'Reabrir evento' : 'Abrir evento'}
+            </button>
+          )}
+          {event.status === 'open' && (
+            <button className="btn danger" onClick={setStatus('closed', '¿Cerrar el evento? Ya no se aceptarán envíos.')}>
+              Cerrar evento
+            </button>
+          )}
+          {event.status !== 'draft' && (
+            <button className="btn" onClick={setStatus('draft', '¿Volver a borrador? Los participantes no podrán entrar.')}>
+              Pasar a borrador
+            </button>
+          )}
+        </div>
+      )}
+      <ErrorBox error={error} />
+    </div>
+  )
+}
+
+function AccessCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const { save, error } = useSaver()
+  const url = eventJoinUrl(event)
+  return (
+    <div className="card qr-card">
+      <h3>Acceso de participantes</h3>
+      <QrImage value={url} size={180} />
+      <p className="code-text">{event.joinCode}</p>
+      <p className="muted small break">{url}</p>
+      <p className="muted small">
+        El QR ya incluye el código. Sin QR, se entra en <strong>{window.location.host}/entrar</strong> con el código. Solo quien lo
+        tenga puede unirse y ver la galería.
+      </p>
+      <div className="row">
+        <Link className="btn" to={`/admin/e/${event.id}/imprimir`}>
+          🖨️ Imprimir QRs
+        </Link>
+        <button className="btn" onClick={() => navigator.clipboard?.writeText(url)}>
+          Copiar enlace
+        </button>
+        {isAdmin && (
+          <button
+            className="btn"
+            onClick={() =>
+              window.confirm('Los QR impresos con el código actual dejarán de servir para entrar. ¿Cambiar el código?') &&
+              save({ regenerateJoinCode: true })
+            }
+          >
+            Cambiar código
+          </button>
+        )}
+      </div>
+      <ErrorBox error={error} />
+    </div>
+  )
+}
+
+function EventCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const { save, error, saved } = useSaver()
+  const [f, setF] = useState(() => ({
+    name: event.name,
+    description: event.description,
+    startsAt: toLocalInput(event.startsAt),
+    endsAt: toLocalInput(event.endsAt),
+    teamLabel: event.settings.teamLabel,
+    accent: event.settings.accent,
+    likes: event.settings.likes,
+  }))
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+
+  const submit = (e) => {
+    e.preventDefault()
+    save({
+      name: f.name,
+      description: f.description,
+      startsAt: fromLocalInput(f.startsAt),
+      endsAt: fromLocalInput(f.endsAt),
+      settings: { teamLabel: f.teamLabel, accent: f.accent, likes: f.likes },
+    })
+  }
+
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h3>Datos del evento</h3>
+      <fieldset disabled={!isAdmin}>
+        <label>
+          Nombre
+          <input value={f.name} onChange={set('name')} required minLength={2} maxLength={80} />
+        </label>
+        <label>
+          Descripción (se ve al entrar)
+          <textarea value={f.description} onChange={set('description')} rows={2} maxLength={500} />
+        </label>
+        <div className="form-grid">
+          <label>
+            Inicio
+            <input type="datetime-local" value={f.startsAt} onChange={set('startsAt')} />
+          </label>
+          <label>
+            Fin
+            <input type="datetime-local" value={f.endsAt} onChange={set('endsAt')} />
+          </label>
+          <label>
+            Cómo se llama un equipo
+            <input value={f.teamLabel} onChange={set('teamLabel')} maxLength={20} placeholder="Rama" />
+          </label>
+          <label>
+            Color principal
+            <input type="color" value={f.accent} onChange={set('accent')} />
+          </label>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={f.likes} onChange={set('likes')} />
+          <span>Permitir likes en la galería</span>
+        </label>
+      </fieldset>
+      <ErrorBox error={error} />
+      {isAdmin && (
+        <div className="row">
+          <button className="btn primary">Guardar</button>
+          {saved && <span className="saved">✓ Guardado</span>}
+        </div>
+      )}
+    </form>
+  )
+}
+
+function TeamsCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const { data, error, setData } = useAsync(() => listTeams(event.id), [event.id])
+  const [text, setText] = useState('')
+  const [actionError, setActionError] = useState(null)
+  const label = event.settings.teamLabel
+
+  const run = async (fn) => {
+    setActionError(null)
+    try {
+      setData(await fn())
+    } catch (e) {
+      setActionError(e)
+    }
+  }
+
+  const add = (e) => {
+    e.preventDefault()
+    const names = text.split('\n').map((s) => s.trim()).filter(Boolean)
+    if (names.length) run(() => addTeams(event.id, names)).then(() => setText(''))
+  }
+
+  return (
+    <div className="card">
+      <h3>
+        {label}s ({data?.teams.length ?? 0})
+      </h3>
+      <p className="muted small">Se eligen al entrar y forman el ranking por {label}. Si no agregas ninguna, no se pregunta.</p>
+      <ul className="team-list">
+        {data?.teams.map((t) => (
+          <li key={t.id}>
+            <span>{t.name}</span>
+            <span className="muted small">{t.members} personas</span>
+            {isAdmin && (
+              <span className="row">
+                <button
+                  className="btn small"
+                  onClick={() => {
+                    const name = window.prompt(`Nuevo nombre para «${t.name}»`, t.name)
+                    if (name && name !== t.name) run(() => updateTeam(t.id, { name }))
+                  }}
+                >
+                  Renombrar
+                </button>
+                <button
+                  className="btn small"
+                  onClick={() =>
+                    window.confirm(
+                      t.members ? `${t.members} personas quedarán sin ${label}. ¿Borrar «${t.name}»?` : `¿Borrar «${t.name}»?`,
+                    ) && run(() => deleteTeam(t.id))
+                  }
+                >
+                  Borrar
+                </button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {isAdmin && (
+        <form className="form" onSubmit={add}>
+          <label>
+            Agregar (una por línea)
+            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} placeholder={'Rama ESPOL\nRama EPN\nRama UCuenca'} />
+          </label>
+          <button className="btn">Agregar</button>
+        </form>
+      )}
+      <ErrorBox error={error || actionError} />
+    </div>
+  )
+}
+
+function LevelsCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const { save, error, saved } = useSaver()
+  const [levels, setLevels] = useState(event.levels)
+  const set = (i, k) => (e) => setLevels((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: e.target.value } : l)))
+
+  return (
+    <div className="card form">
+      <h3>Niveles</h3>
+      <p className="muted small">XP necesario para cada nivel. El primero siempre empieza en 0.</p>
+      <fieldset disabled={!isAdmin} className="levels">
+        {levels.map((l, i) => (
+          <div key={i} className="row">
+            <input value={l.name} onChange={set(i, 'name')} aria-label="Nombre del nivel" />
+            <input
+              type="number"
+              min="0"
+              value={l.minXp}
+              onChange={set(i, 'minXp')}
+              disabled={i === 0}
+              aria-label="XP mínimo"
+            />
+            <span className="muted small">XP</span>
+            {i > 0 && (
+              <button type="button" className="btn small" onClick={() => setLevels((ls) => ls.filter((_, j) => j !== i))}>
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </fieldset>
+      {isAdmin && (
+        <div className="row">
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => setLevels((ls) => [...ls, { name: 'Nuevo nivel', minXp: (Number(ls.at(-1)?.minXp) || 0) + 100 }])}
+          >
+            + Nivel
+          </button>
+          <button className="btn primary" onClick={() => save({ levels: levels.map((l) => ({ name: l.name, minXp: Number(l.minXp) || 0 })) })}>
+            Guardar niveles
+          </button>
+          {saved && <span className="saved">✓ Guardado</span>}
+        </div>
+      )}
+      <ErrorBox error={error} />
+    </div>
+  )
+}
+
+const RULES = [
+  ['count', 'Completar N retos'],
+  ['xp', 'Llegar a N XP'],
+  ['category', 'N retos de una categoría'],
+  ['challengeType', 'N retos de un tipo'],
+  ['challenge', 'Completar un reto concreto'],
+  ['allOfType', 'Todos los retos de un tipo'],
+]
+
+function ruleText(rule, challenges) {
+  switch (rule.type) {
+    case 'count':
+      return `Completar ${rule.n} reto(s)`
+    case 'xp':
+      return `Llegar a ${rule.n} XP`
+    case 'category':
+      return `${rule.n} reto(s) de «${rule.category}»`
+    case 'challengeType':
+      return `${rule.n} reto(s) ${rule.challengeType}`
+    case 'challenge':
+      return `Completar «${challenges.find((c) => c.id === rule.challengeId)?.title ?? '¿?'}»`
+    case 'allOfType':
+      return `Todos los retos ${rule.challengeType}`
+    default:
+      return rule.type
+  }
+}
+
+function BadgesCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const badges = useAsync(() => listBadges(event.id), [event.id])
+  const challenges = useAsync(() => listChallenges(event.id), [event.id])
+  const [editing, setEditing] = useState(null) // id o 'new'
+  const [error, setError] = useState(null)
+  const chList = challenges.data?.challenges ?? []
+
+  const saveBadge = async (body) => {
+    setError(null)
+    try {
+      const res = editing === 'new' ? await createBadge(event.id, body) : await updateBadge(editing, body)
+      badges.setData(res)
+      setEditing(null)
+    } catch (e) {
+      setError(e)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>Logros (badges)</h3>
+      <ul className="team-list">
+        {badges.data?.badges.map((b) =>
+          editing === b.id ? (
+            <li key={b.id}>
+              <BadgeForm badge={b} challenges={chList} onSave={saveBadge} onCancel={() => setEditing(null)} />
+            </li>
+          ) : (
+            <li key={b.id}>
+              <span>
+                {b.icon} <strong>{b.name}</strong>
+                <br />
+                <small className="muted">{ruleText(b.rule, chList)}</small>
+              </span>
+              {isAdmin && (
+                <span className="row">
+                  <button className="btn small" onClick={() => setEditing(b.id)}>
+                    Editar
+                  </button>
+                  <button
+                    className="btn small"
+                    onClick={async () => window.confirm(`¿Borrar «${b.name}»?`) && badges.setData(await deleteBadge(b.id))}
+                  >
+                    Borrar
+                  </button>
+                </span>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+      {editing === 'new' && <BadgeForm challenges={chList} onSave={saveBadge} onCancel={() => setEditing(null)} />}
+      {isAdmin && editing !== 'new' && (
+        <button className="btn" onClick={() => setEditing('new')}>
+          + Nuevo logro
+        </button>
+      )}
+      <ErrorBox error={error || badges.error} />
+    </div>
+  )
+}
+
+function BadgeForm({ badge, challenges, onSave, onCancel }) {
+  const [f, setF] = useState(() => ({
+    name: badge?.name ?? '',
+    icon: badge?.icon ?? '🏅',
+    description: badge?.description ?? '',
+    type: badge?.rule.type ?? 'count',
+    n: badge?.rule.n ?? 1,
+    category: badge?.rule.category ?? '',
+    challengeType: badge?.rule.challengeType ?? 'PHOTO',
+    challengeId: badge?.rule.challengeId ?? challenges[0]?.id ?? '',
+  }))
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
+  const needsN = ['count', 'xp', 'category', 'challengeType'].includes(f.type)
+
+  const submit = (e) => {
+    e.preventDefault()
+    onSave({
+      name: f.name,
+      icon: f.icon,
+      description: f.description,
+      rule: {
+        type: f.type,
+        n: Number(f.n),
+        category: f.category,
+        challengeType: f.challengeType,
+        challengeId: Number(f.challengeId),
+      },
+    })
+  }
+
+  return (
+    <form className="form badge-form" onSubmit={submit}>
+      <div className="form-grid">
+        <label>
+          Icono
+          <input value={f.icon} onChange={set('icon')} maxLength={16} required />
+        </label>
+        <label>
+          Nombre
+          <input value={f.name} onChange={set('name')} maxLength={40} required minLength={2} />
+        </label>
+      </div>
+      <label>
+        Descripción
+        <input value={f.description} onChange={set('description')} maxLength={200} />
+      </label>
+      <div className="form-grid">
+        <label>
+          Se gana al…
+          <select value={f.type} onChange={set('type')}>
+            {RULES.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </label>
+        {needsN && (
+          <label>
+            N
+            <input type="number" min="1" value={f.n} onChange={set('n')} />
+          </label>
+        )}
+        {f.type === 'category' && (
+          <label>
+            Categoría
+            <input value={f.category} onChange={set('category')} required />
+          </label>
+        )}
+        {(f.type === 'challengeType' || f.type === 'allOfType') && (
+          <label>
+            Tipo
+            <select value={f.challengeType} onChange={set('challengeType')}>
+              <option value="PHOTO">Foto</option>
+              <option value="AR">AR</option>
+              <option value="QR">QR</option>
+            </select>
+          </label>
+        )}
+        {f.type === 'challenge' && (
+          <label>
+            Reto
+            <select value={f.challengeId} onChange={set('challengeId')}>
+              {challenges.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="row">
+        <button className="btn primary">Guardar</button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function DuplicateCard() {
+  const { event } = useEventAdmin()
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
+  const [slug, setSlug] = useState('')
+  const [error, setError] = useState(null)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    try {
+      const { event: copy } = await duplicateEvent(event.id, { name, slug: slug || undefined })
+      navigate(`/admin/e/${copy.id}/ajustes`)
+    } catch (err) {
+      setError(err)
+    }
+  }
+
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h3>Duplicar evento</h3>
+      <p className="muted small">
+        Crea un evento nuevo con las mismas {event.settings.teamLabel}s, retos (en borrador), logros, niveles y ajustes. Sin
+        participantes ni fotos. Ideal para pasar del Taller de Directivos a la RNR.
+      </p>
+      <div className="form-grid">
+        <label>
+          Nombre del nuevo evento
+          <input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
+        </label>
+        <label>
+          Identificador (opcional)
+          <input value={slug} onChange={(e) => setSlug(e.target.value)} />
+        </label>
+      </div>
+      <ErrorBox error={error} />
+      <button className="btn">Duplicar</button>
+    </form>
+  )
+}
+
+function DangerCard() {
+  const { event } = useEventAdmin()
+  const navigate = useNavigate()
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState(null)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    try {
+      await deleteEvent(event.id, confirm)
+      navigate('/admin')
+    } catch (err) {
+      setError(err)
+    }
+  }
+
+  return (
+    <form className="card form danger-zone" onSubmit={submit}>
+      <h3>Borrar evento</h3>
+      <p className="muted small">
+        Borra para siempre el evento, sus participantes y todas sus fotos. Descarga antes el ZIP desde Galería si quieres
+        conservarlas.
+      </p>
+      <label>
+        Escribe «{event.slug}» para confirmar
+        <input value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" />
+      </label>
+      <ErrorBox error={error} />
+      <button className="btn danger" disabled={confirm !== event.slug}>
+        Borrar evento
+      </button>
+    </form>
+  )
+}

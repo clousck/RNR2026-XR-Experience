@@ -10,11 +10,18 @@
 
 html, body, #root {
   margin: 0;
-  height: 100%;
-  background: #000;
+  min-height: 100%;
+  background: #0f1115;
   color: var(--text);
+}
+
+/* Mientras el booth de Watt esta abierto la pagina no debe desplazarse:
+   los gestos mueven a Watt. */
+html.booth-open, html.booth-open body {
+  height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  background: #000;
 }
 
 button {
