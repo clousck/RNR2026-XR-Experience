@@ -1,10 +1,95 @@
-# Foto con Watt
+# RNR Quest
 
-Página de la gincana: el QR (generado fuera de la app) lleva a esta URL, se abre
-la cámara con Watt encima, se elige una pose, se toma la foto con cuenta
-regresiva de 3 segundos y se comparte al grupo de WhatsApp.
+Gamificación para eventos de IEEE Ecuador (Taller de Directivos, RNR). Desde el
+teléfono, sin instalar nada:
 
-React + Vite + three.js. Sin backend.
+    QR del evento → nombre y Rama → retos → cámara → subir → puntos
+
+- **Retos**: 📷 foto, 🐱 AR con Watt (el booth de abajo) y 📍 checkpoints QR.
+  Cada reto tiene puntos, categoría, dificultad, horario, cupo, desbloqueo por
+  otros retos o XP, modo secreto y aprobación manual opcional.
+- **Gamificación liviana**: XP, niveles, logros, ranking individual y por Rama.
+- **Galería privada** del evento (solo fotos aprobadas, solo participantes),
+  con filtros por reto y Rama y likes.
+- **Panel** (`/admin`): crear y editar retos sin tocar código, moderar fotos
+  (también desde el teléfono), participantes, ranking con pantalla grande,
+  estadísticas, descarga de fotos en ZIP, imprimir QRs, abrir y cerrar el
+  evento, duplicar un evento para el siguiente.
+- **Multi-evento**: nada de la RNR está en el código; cada evento se crea en el panel.
+
+## Arquitectura
+
+```
+Frontend (React + Vite)          API (server/)              Raspberry Pi
+Cloudflare Pages o la Pi  ──▶  Node + Hono  ──▶  SQLite (quest.db) + fotos en disco
+src/api/client.js es el único       /api/...            detrás de Cloudflare Tunnel
+contacto con el backend
+```
+
+- El frontend solo habla con la API a través de `src/api/` (`VITE_API_URL`).
+- Las fotos pasan por `server/src/storage.js`: hoy disco local, mañana R2/S3
+  implementando los mismos métodos.
+- Las fotos **no son públicas**: la API entrega URLs firmadas con vencimiento
+  solo a participantes y moderadores con sesión.
+- Participantes sin cuenta: un token por evento en el teléfono y un **código de
+  recuperación** en el perfil para seguir desde otro teléfono.
+- XP, niveles, logros y ranking se calculan a partir de las fotos aprobadas:
+  aprobar, rechazar o borrar corrige todo automáticamente.
+
+Despliegue en la Pi, Cloudflare, backups y checklist del día del evento:
+**[docs/deploy-pi.md](docs/deploy-pi.md)**.
+
+## Desarrollo
+
+    npm install && (cd server && npm install)
+    cd server && npm run seed-demo                 # evento "demo" con retos de cada tipo
+    cd server && npm run create-admin -- --username admin
+    cd server && npm run dev                       # API en http://localhost:8787/api
+    npm run dev                                    # https://localhost:5173 (proxy /api → 8787)
+
+Entrar como participante: `https://localhost:5173/e/demo?c=<código que imprime seed-demo>`.
+Panel: `https://localhost:5173/admin`.
+
+    cd server && npm test        # pruebas de la API (flujo completo)
+    cd server && npm run loadtest -- --code <código> --users 150
+
+## Estructura
+
+    src/app/App.jsx               rutas (cada parte se descarga solo al abrirla)
+    src/api/                      client.js (fetch/subidas), quest.js, admin.js
+    src/features/quest/           app del participante: entrar, retos, envío de
+                                  evidencia, QR, ranking, galería, perfil, cola offline
+    src/features/admin/           panel: moderación, retos, participantes, ranking,
+                                  galería/ZIP, ajustes, usuarios, impresión de QRs
+    src/features/booth/           booth de Watt (ver abajo)
+    src/shared/                   imageResize (reduce la foto y quita el EXIF), toasts…
+    server/src/
+      app.js                      Hono: CORS, errores, /api/media firmadas, estáticos
+      db.js                       esquema SQLite y migraciones
+      rules.js                    niveles, logros, desbloqueos, ranking
+      routes/participant.js       API de participantes
+      routes/admin.js             API del panel
+      storage.js                  fotos en disco
+    server/scripts/               create-admin, seed-demo, backup, loadtest
+    docs/deploy-pi.md             despliegue
+
+### Rutas
+
+| URL | Qué es |
+|---|---|
+| `/e/:evento?c=CÓDIGO` | QR del evento: entrar y jugar |
+| `/e/:evento/q/:código` | QR impreso de un checkpoint |
+| `/entrar` | entrar escribiendo el código del evento |
+| `/e/:evento/watt` | booth libre con Watt |
+| `/admin` | panel |
+| `/` | booth de Watt (como antes: hay QRs viejos que apuntan acá) |
+
+# Booth de Watt
+
+Es la experiencia original: se abre la cámara con Watt encima, se elige una
+pose, se toma la foto con cuenta regresiva de 3 segundos y se comparte. En RNR
+Quest es además el reto **AR**: en modo `challenge` la foto se envía como
+evidencia en vez de compartirse.
 
 ## Cómo funciona
 
@@ -54,9 +139,11 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
 - **Compartir**: Web Share API → hoja de compartir del sistema → WhatsApp → grupo.
   Ninguna web puede mandar una imagen directo a un grupo; el usuario lo elige.
 
-## Estructura
+En un reto AR en iPhone no se ofrece Quick Look: abre fuera de la página y la
+foto nunca vuelve a la app. Se usa el modo cámara, que sí entrega la foto.
 
-    src/app/App.jsx            rutas: / y /e/:slug/watt → booth (carga diferida)
+## Estructura del booth
+
     src/shared/inAppBrowser.js detecta WeChat/Instagram/etc.
     src/features/booth/
       WattBooth.jsx            UI: poses, cuenta regresiva, vista previa
@@ -106,9 +193,8 @@ ojos. Las tres se precargan, así que el cambio es instantáneo, y la foto y el
 USDZ de iPhone llevan la cara elegida. Para agregar o renombrar caras, edita
 `src/features/booth/faces.js`. `?cara=2` en la URL elige la cara inicial.
 
-## Uso
+## Probar en el celular
 
-    npm install
     npm run dev                          # https://localhost:5173, para programar
     npm run build && npm run preview     # https://<tu-ip>:4173, para probar en el celular
 
@@ -145,7 +231,10 @@ Workers & Pages → Create → Pages → *Connect to Git* → este repo, con:
 | Build command          | `npm run build` |
 | Build output directory | `dist`          |
 
+| Variable de entorno    | `VITE_API_URL=https://api.tudominio.org/api` |
+
 La versión de Node sale de `.node-version` (22); Vite 8 no compila con Node 18.
 Cada push a `main` redespliega solo. Cloudflare da HTTPS, que es obligatorio
-para la cámara. Es una sola página, no hace falta configurar rewrites. El QR
-debe apuntar a la URL final (`https://<proyecto>.pages.dev` o tu dominio).
+para la cámara. Es un SPA: sin `404.html`, Pages sirve `index.html` en todas las
+rutas (`/e/...`, `/admin`), no hace falta configurar rewrites. La API va en la
+Pi: ver [docs/deploy-pi.md](docs/deploy-pi.md).
