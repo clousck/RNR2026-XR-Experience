@@ -1,0 +1,237 @@
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+
+/**
+ * Esquema. Cada entrada de MIGRATIONS se aplica una sola vez, en orden
+ * (PRAGMA user_version guarda cuantas se aplicaron). Para cambiar el
+ * esquema se agrega una entrada nueva; nunca se edita una ya publicada.
+ */
+const MIGRATIONS = [
+  `
+  CREATE TABLE events (
+    id           INTEGER PRIMARY KEY,
+    slug         TEXT NOT NULL UNIQUE,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'open', 'closed')),
+    join_code    TEXT NOT NULL UNIQUE,
+    starts_at    TEXT,
+    ends_at      TEXT,
+    levels       TEXT NOT NULL DEFAULT '[]',
+    settings     TEXT NOT NULL DEFAULT '{}',
+    created_at   TEXT NOT NULL
+  );
+
+  CREATE TABLE teams (
+    id          INTEGER PRIMARY KEY,
+    event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    short_name  TEXT NOT NULL DEFAULT '',
+    UNIQUE (event_id, name)
+  );
+
+  CREATE TABLE participants (
+    id             INTEGER PRIMARY KEY,
+    event_id       INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+    alias          TEXT NOT NULL,
+    alias_key      TEXT NOT NULL,
+    token_hash     TEXT NOT NULL UNIQUE,
+    recovery_code  TEXT NOT NULL,
+    banned         INTEGER NOT NULL DEFAULT 0,
+    consent_at     TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    UNIQUE (event_id, alias_key),
+    UNIQUE (event_id, recovery_code)
+  );
+
+  CREATE TABLE challenges (
+    id                 INTEGER PRIMARY KEY,
+    event_id           INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    type               TEXT NOT NULL CHECK (type IN ('PHOTO', 'AR', 'QR', 'TRIVIA', 'TEXT')),
+    title              TEXT NOT NULL,
+    description        TEXT NOT NULL DEFAULT '',
+    icon               TEXT NOT NULL DEFAULT '',
+    image_key          TEXT,
+    points             INTEGER NOT NULL DEFAULT 10,
+    category           TEXT NOT NULL DEFAULT '',
+    difficulty         TEXT NOT NULL DEFAULT 'easy' CHECK (difficulty IN ('easy', 'medium', 'hard')),
+    status             TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'inactive')),
+    visibility         TEXT NOT NULL DEFAULT 'visible' CHECK (visibility IN ('visible', 'secret')),
+    unlock_rule        TEXT,
+    available_from     TEXT,
+    available_until    TEXT,
+    max_completions    INTEGER,
+    requires_approval  INTEGER NOT NULL DEFAULT 1,
+    requires_photo     INTEGER NOT NULL DEFAULT 1,
+    config             TEXT NOT NULL DEFAULT '{}',
+    qr_code            TEXT UNIQUE,
+    sort_order         INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL
+  );
+  CREATE INDEX challenges_event ON challenges(event_id, sort_order);
+
+  CREATE TABLE admins (
+    id             INTEGER PRIMARY KEY,
+    username       TEXT NOT NULL UNIQUE,
+    name           TEXT NOT NULL,
+    password_hash  TEXT NOT NULL,
+    role           TEXT NOT NULL DEFAULT 'moderator' CHECK (role IN ('admin', 'moderator')),
+    active         INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL
+  );
+
+  CREATE TABLE admin_sessions (
+    token_hash  TEXT PRIMARY KEY,
+    admin_id    INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+    expires_at  TEXT NOT NULL
+  );
+
+  CREATE TABLE submissions (
+    id              INTEGER PRIMARY KEY,
+    event_id        INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    challenge_id    INTEGER NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+    participant_id  INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+    points_awarded  INTEGER NOT NULL DEFAULT 0,
+    answer          TEXT,
+    reject_reason   TEXT,
+    reviewed_by     INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+    reviewed_at     TEXT,
+    client_id       TEXT,
+    created_at      TEXT NOT NULL,
+    UNIQUE (participant_id, client_id)
+  );
+  CREATE INDEX submissions_event_status ON submissions(event_id, status);
+  CREATE INDEX submissions_participant ON submissions(participant_id, status);
+  CREATE INDEX submissions_challenge ON submissions(challenge_id, status);
+
+  CREATE TABLE photos (
+    id             INTEGER PRIMARY KEY,
+    submission_id  INTEGER NOT NULL UNIQUE REFERENCES submissions(id) ON DELETE CASCADE,
+    event_id       INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    key            TEXT NOT NULL,
+    thumb_key      TEXT NOT NULL,
+    width          INTEGER NOT NULL DEFAULT 0,
+    height         INTEGER NOT NULL DEFAULT 0,
+    bytes          INTEGER NOT NULL DEFAULT 0,
+    captured_with  TEXT NOT NULL DEFAULT 'camera' CHECK (captured_with IN ('camera', 'ar', 'upload')),
+    created_at     TEXT NOT NULL
+  );
+  CREATE INDEX photos_event ON photos(event_id, id);
+
+  CREATE TABLE likes (
+    photo_id        INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    participant_id  INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (photo_id, participant_id)
+  );
+
+  CREATE TABLE badges (
+    id           INTEGER PRIMARY KEY,
+    event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    icon         TEXT NOT NULL DEFAULT '🏅',
+    description  TEXT NOT NULL DEFAULT '',
+    rule         TEXT NOT NULL,
+    sort_order   INTEGER NOT NULL DEFAULT 0
+  );
+  `,
+]
+
+function migrate(db) {
+  const { user_version: version } = db.prepare('PRAGMA user_version').get()
+  for (let i = version; i < MIGRATIONS.length; i++) {
+    db.exec('BEGIN')
+    try {
+      db.exec(MIGRATIONS[i])
+      db.exec(`PRAGMA user_version = ${i + 1}`)
+      db.exec('COMMIT')
+    } catch (e) {
+      db.exec('ROLLBACK')
+      throw e
+    }
+  }
+}
+
+// node:sqlite rechaza claves que no estan en la consulta, booleanos y
+// undefined. Se normaliza aca para poder pasar objetos "de dominio".
+function bindFor(sql) {
+  const names = [...new Set([...sql.matchAll(/[:$@]([A-Za-z_]\w*)/g)].map((m) => m[1]))]
+  return (params) => {
+    const out = {}
+    for (const n of names) {
+      const v = params[n]
+      out[n] = v === undefined ? null : typeof v === 'boolean' ? Number(v) : v
+    }
+    return out
+  }
+}
+
+/**
+ * Abre (o crea) la base. Devuelve un envoltorio pequeño con consultas
+ * preparadas en cache. Todas las operaciones son sincronicas: dentro de
+ * un tx() ninguna otra peticion puede intercalarse.
+ */
+export function openDb(file) {
+  if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true })
+  const db = new DatabaseSync(file)
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+  `)
+  migrate(db)
+
+  const cache = new Map()
+  const prep = (sql) => {
+    let entry = cache.get(sql)
+    if (!entry) {
+      entry = { stmt: db.prepare(sql), bind: bindFor(sql) }
+      cache.set(sql, entry)
+    }
+    return entry
+  }
+  const call = (method) => (sql, params = {}) => {
+    const { stmt, bind } = prep(sql)
+    return stmt[method](bind(params))
+  }
+
+  let depth = 0
+  return {
+    raw: db,
+    get: call('get'),
+    all: call('all'),
+    run: call('run'),
+    tx(fn) {
+      if (depth > 0) return fn()
+      db.exec('BEGIN IMMEDIATE')
+      depth++
+      try {
+        const result = fn()
+        db.exec('COMMIT')
+        return result
+      } catch (e) {
+        db.exec('ROLLBACK')
+        throw e
+      } finally {
+        depth--
+      }
+    },
+    close: () => db.close(),
+  }
+}
+
+export const now = () => new Date().toISOString()
+
+export function parseJson(text, fallback) {
+  if (text == null || text === '') return fallback
+  try {
+    return JSON.parse(text)
+  } catch {
+    return fallback
+  }
+}
