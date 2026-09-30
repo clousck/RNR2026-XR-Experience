@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import WattCanvas from './components/WattCanvas'
-import { useCamera } from './lib/useCamera'
-import { requestMotionPermission, useDeviceRotation } from './lib/useDeviceRotation'
-import { composePhoto } from './lib/composePhoto'
-import { buildPoseUSDZ, openQuickLook, supportsQuickLook } from './lib/quickLook'
+import WattCanvas from './WattCanvas'
+import { useCamera } from './useCamera'
+import { requestMotionPermission, useDeviceRotation } from './useDeviceRotation'
+import { composePhoto } from './composePhoto'
+import { buildPoseUSDZ, openQuickLook, supportsQuickLook } from './quickLook'
 import { POSES, initialPose } from './poses'
 import { FACES, initialFace } from './faces'
-import { IS_IOS, detectInAppBrowser } from './lib/inAppBrowser'
-import './App.css'
+import { IS_IOS, detectInAppBrowser } from '../../shared/inAppBrowser'
+import './WattBooth.css'
 
 const START_POSE = initialPose()
 const START_FACE = initialFace()
@@ -38,7 +38,14 @@ async function detectAR() {
   return supportsQuickLook() ? 'quicklook' : 'none'
 }
 
-export default function App() {
+/**
+ * Photo booth con Watt.
+ *  - mode "free":      la foto se comparte o descarga (experiencia original).
+ *  - mode "challenge": la foto es la evidencia de un reto; se entrega con
+ *                      onSubmit(blob). onExit reemplaza la pantalla de cierre.
+ */
+export default function WattBooth({ mode = 'free', onSubmit, onExit }) {
+  const challenge = mode === 'challenge'
   const stageRef = useRef(null)
   const boothRef = useRef(null)
   const viewRef = useRef(null)
@@ -179,7 +186,8 @@ export default function App() {
       stageRef.current.endAR()
       return
     }
-    setExited(true)
+    if (onExit) onExit()
+    else setExited(true)
   }
 
   const capture = useCallback(async () => {
@@ -257,6 +265,11 @@ export default function App() {
     } catch (e) {
       if (e.name !== 'AbortError') setNotice('No se pudo compartir. Prueba con Descargar.')
     }
+  }
+
+  const submit = async () => {
+    await leaveARFirst()
+    onSubmit?.(photo.blob)
   }
 
   const counting = count !== null
@@ -427,12 +440,21 @@ export default function App() {
       {photo && (
         <div className="preview">
           <img src={photo.url} alt="Tu foto con Watt" />
-          <p className="preview-hint">Toca Compartir, elige WhatsApp y el grupo de la gincana.</p>
-          <div className="preview-actions">
-            <button className="primary" onClick={share}>Compartir</button>
-            <button onClick={download}>Descargar</button>
-            <button onClick={closePhoto}>Otra foto</button>
-          </div>
+          {challenge ? (
+            <div className="preview-actions">
+              <button className="primary" onClick={submit}>Enviar como evidencia</button>
+              <button onClick={closePhoto}>Otra foto</button>
+            </div>
+          ) : (
+            <>
+              <p className="preview-hint">Toca Compartir, elige WhatsApp y el grupo de la gincana.</p>
+              <div className="preview-actions">
+                <button className="primary" onClick={share}>Compartir</button>
+                <button onClick={download}>Descargar</button>
+                <button onClick={closePhoto}>Otra foto</button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </main>

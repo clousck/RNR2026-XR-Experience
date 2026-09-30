@@ -25,3 +25,18 @@ button {
 }
 
 button:disabled { opacity: 0.45; cursor: default; }
+
+/* Mensaje a pantalla completa (tambien lo usa la carga diferida del booth). */
+.overlay-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.overlay-msg.error { color: #ffb4a8; }

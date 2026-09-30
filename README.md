@@ -56,16 +56,20 @@ soporta, ofrece el botón **"Poner a Watt en el piso (AR)"**:
 
 ## Estructura
 
-    src/poses.js               botones: clip del FBX → etiqueta
-    src/faces.js               botones de cara: textura → etiqueta
-    src/App.jsx                UI: poses, cuenta regresiva, vista previa
-    src/components/WattCanvas  canvas de three.js
-    src/lib/wattStage.js       escena, carga del FBX, poses, gestos, AR WebXR
-    src/lib/quickLook.js       pose → USDZ para Quick Look (iPhone)
-    src/lib/useCamera.js       cámara frontal/trasera, autoplay bloqueado, sin imagen
-    src/lib/inAppBrowser.js    detecta WeChat/Instagram/etc.
-    src/lib/useDeviceRotation.js  teléfono de lado con la rotación bloqueada
-    src/lib/composePhoto.js    video + Watt → JPG
+    src/app/App.jsx            rutas: / y /e/:slug/watt → booth (carga diferida)
+    src/shared/inAppBrowser.js detecta WeChat/Instagram/etc.
+    src/features/booth/
+      WattBooth.jsx            UI: poses, cuenta regresiva, vista previa
+                               (mode "free": compartir · "challenge": onSubmit(blob))
+      poses.js                 botones: clip del FBX → etiqueta
+      faces.js                 botones de cara: textura → etiqueta
+      WattCanvas.jsx           canvas de three.js
+      wattStage.js             escena, carga del FBX, poses, gestos, AR WebXR
+      quickLook.js             pose → USDZ para Quick Look (iPhone)
+      useCamera.js             cámara frontal/trasera, autoplay bloqueado, sin imagen
+      useDeviceRotation.js     teléfono de lado con la rotación bloqueada
+      composePhoto.js          video + Watt → JPG
+      assets/                  watt.fbx y las texturas de las caras
 
 ## Poses
 
@@ -82,14 +86,14 @@ El FBX trae 10 clips. Los que se usan:
 
 `Pose T`, `Action`, `Action.001` y `Action.002` quedan fuera: las tres `Action`
 son copias exactas de la Pose T (restos de Blender). Para renombrar o reordenar
-botones, edita `src/poses.js`.
+botones, edita `src/features/booth/poses.js`.
 
 `?pose=Pose%203` en la URL elige la pose inicial.
 
 ## Caras de Watt
 
 La textura no viene embebida en el FBX (apunta a `C:\Users\Oscar\...\gatoieeee.png`,
-una ruta de otra PC). La app la reemplaza por las caras de `src/assets/`:
+una ruta de otra PC). La app la reemplaza por las caras de `src/features/booth/assets/`:
 
 | Archivo | Botón | Boca / ojos |
 |---|---|---|
@@ -100,7 +104,7 @@ una ruta de otra PC). La app la reemplaza por las caras de `src/assets/`:
 Cada archivo es la textura completa del modelo (1024×1024); solo cambian boca y
 ojos. Las tres se precargan, así que el cambio es instantáneo, y la foto y el
 USDZ de iPhone llevan la cara elegida. Para agregar o renombrar caras, edita
-`src/faces.js`. `?cara=2` en la URL elige la cara inicial.
+`src/features/booth/faces.js`. `?cara=2` en la URL elige la cara inicial.
 
 ## Uso
 

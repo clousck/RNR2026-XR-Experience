@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { WattStage } from '../lib/wattStage'
-import wattUrl from '../assets/watt.fbx?url'
+import { WattStage } from './wattStage'
+import wattUrl from './assets/watt.fbx?url'
 
 /**
  * Canvas transparente con Watt. Expone la instancia de WattStage en

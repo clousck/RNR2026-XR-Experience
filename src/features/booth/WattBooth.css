@@ -118,20 +118,6 @@
 .shutter:active:not(:disabled) span { transform: scale(0.92); }
 
 /* --- mensajes --- */
-.overlay-msg {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  text-align: center;
-  pointer-events: none;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-}
-
-.overlay-msg.error { color: #ffb4a8; }
-
 .banner {
   position: absolute;
   top: calc(max(0.75rem, env(safe-area-inset-top)) + 56px);
