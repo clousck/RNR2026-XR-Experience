@@ -1,0 +1,66 @@
+# CLAUDE.md — contexto para sesiones de Claude Code
+
+RNR Quest: gamificación web para eventos de IEEE Ecuador. Nació como el booth AR
+"Foto con Watt" y evolucionó sin reescribirse. Qué hace, rutas, comandos y
+estructura: **README.md**. Despliegue: **docs/deploy-pi.md**. Este archivo solo
+guarda lo que no se deduce leyendo el código.
+
+## Usuario y contexto
+- Se usará en **2027** en dos eventos: **Taller de Directivos** y **RNR** (multi-evento real).
+- ~100–150 participantes. Moderan el usuario y el **SAC team (~10 personas)**.
+- Servidor: **Raspberry Pi 5, 8 GB, 32 GB** (probablemente microSD → recomendar SSD), detrás de
+  **Cloudflare Tunnel**. El **dominio aún no está comprado**: todo va por variables de entorno.
+- Fotos **no públicas**: solo participantes del evento y organizadores.
+- El usuario escribe en español y prefiere: revisar diseño antes de cambios grandes, no
+  reescribir, explicaciones claras. Commits en `main` (historial en español).
+
+## Arquitectura (decisiones y por qué)
+- Frontend React 19 + Vite 8 (raíz del repo) / API en `server/` (Node ≥22.13, Hono,
+  **`node:sqlite`** para no compilar módulos nativos en la Pi) / fotos en disco vía
+  `server/src/storage.js` (interfaz cambiable a R2/S3).
+- El frontend solo habla con el backend a través de `src/api/` (`VITE_API_URL`, por defecto `/api`;
+  Vite hace proxy a `localhost:8787`). La API puede servir también `dist/` (`STATIC_DIR`).
+- **XP, niveles, logros y ranking se calculan** desde las submissions aprobadas (no hay contadores
+  guardados) → aprobar/rechazar/borrar corrige todo solo. No hay tabla ParticipantBadge.
+- Fotos: el teléfono las reduce a 2048 px JPEG y quita el EXIF (`src/shared/imageResize.js`); la API
+  entrega **URLs firmadas** (`media/...?exp&sig`, relativas a la base de la API), ventanas de 6 h
+  para que el navegador las cachee.
+- Identidad sin cuentas: token por evento (localStorage `rnrquest:v1:<slug>`) + **código de
+  recuperación**. Entrar exige el **código del evento** (va en el QR como `?c=`).
+- Subidas idempotentes por `clientId`; si no hay red quedan en IndexedDB (`uploadQueue.js`).
+- "Reto secreto" es una **visibilidad**, no un tipo. Tipos implementados: PHOTO, AR, QR
+  (el esquema ya admite TRIVIA y TEXT).
+- Roles del panel: `admin` (todo) y `moderator` (moderar, participantes, ver, descargar).
+
+## Trampas conocidas (no repetir)
+- **Límites por IP altos** en join/recover/join-codes: todo el wifi del evento sale por una IP (NAT).
+  Con 15/min se bloqueaba al 90 % en la prueba de carga.
+- **iPhone + reto AR**: Quick Look abre fuera de la página y la foto nunca vuelve → en modo
+  `challenge` el booth usa el modo cámara (`WattBooth.jsx`).
+- `node:sqlite` rechaza claves de más, booleanos y `undefined`: `db.js` normaliza los parámetros;
+  usar siempre parámetros con nombre (`:nombre`).
+- Hono: un patrón como `/:id{[0-9]+}.zip` no funciona (sufijo literal tras regex); parsear a mano.
+- Estado que debe sobrevivir a `refresh()` (p. ej. el festejo tras enviar) va en el componente
+  padre: al refrescar, el reto cambia de estado y el flujo hijo se desmonta.
+- `/` sigue abriendo el booth porque hay QRs viejos que apuntan ahí.
+- Windows del usuario: no hay `python` ni `pkill`; usar node o PowerShell.
+
+## Convenciones
+- Comentarios en español **sin tildes** en el código (como el código original); textos de la UI con
+  tildes. Comentarios que explican el porqué, densidad moderada.
+- CSS plano por feature (`quest.css`, `admin.css`, `WattBooth.css`), tema oscuro, `--accent` por evento.
+- Gráficos del panel: seguir el skill `dataviz` (color de serie `#3987e5` validado en modo oscuro).
+- Cambios de esquema: **agregar** una migración nueva en `MIGRATIONS` (`db.js`), nunca editar una publicada.
+
+## Verificar cambios
+    cd server && npm test             # 20 pruebas de la API (flujo completo)
+    npx oxlint && npm run build       # 0 errores esperados (hay ~22 warnings de estilo conocidos)
+    cd server && npm run seed-demo && npm run loadtest -- --code <código>
+
+## Estado (2026-09-30)
+- Fases 0–5 implementadas: API, app del participante, panel, cola offline, backups, loadtest.
+- Probado: tests de API, recorrido E2E en navegador headless (Edge + puppeteer-core, cámara
+  falsa), carga de 150 usuarios simultáneos en el PC (no en la Pi).
+- **Pendiente**: probar en iPhone y Android reales (cámara, AR, subida); desplegar en la Pi
+  cuando haya dominio; decidir si `/` pasa a ser `/entrar` con el dominio nuevo; decidir
+  ranking por Rama suma vs promedio (hoy suma).
