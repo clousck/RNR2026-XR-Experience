@@ -9,7 +9,11 @@ guarda lo que no se deduce leyendo el código.
 - Se usará en **2027** en dos eventos: **Taller de Directivos** y **RNR** (multi-evento real).
 - ~100–150 participantes. Moderan el usuario y el **SAC team (~10 personas)**.
 - Servidor: **Raspberry Pi 5, 8 GB, 32 GB** (probablemente microSD → recomendar SSD), detrás de
-  **Cloudflare Tunnel**. El **dominio aún no está comprado**: todo va por variables de entorno.
+  **Cloudflare Tunnel**. El **dominio aún no está comprado**: va en un solo lugar,
+  `server/.env` → `APP_DOMAIN` (QR, CORS y túnel salen de ahí). No hay API keys externas.
+- Instalación en servidor: `deploy/setup.sh` + `deploy/cloudflare-tunnel.sh` (sin probar aún en una
+  Pi real; solo validados con `bash -n` y simulando la edición del .env). Por defecto todo en la Pi
+  (la API sirve `dist/` con `STATIC_DIR`); Cloudflare Pages es opcional.
 - Fotos **no públicas**: solo participantes del evento y organizadores.
 - El usuario escribe en español y prefiere: revisar diseño antes de cambios grandes, no
   reescribir, explicaciones claras. Commits en `main` (historial en español).
@@ -43,7 +47,9 @@ guarda lo que no se deduce leyendo el código.
 - Estado que debe sobrevivir a `refresh()` (p. ej. el festejo tras enviar) va en el componente
   padre: al refrescar, el reto cambia de estado y el flujo hijo se desmonta.
 - `/` sigue abriendo el booth porque hay QRs viejos que apuntan ahí.
-- Windows del usuario: no hay `python` ni `pkill`; usar node o PowerShell.
+- Windows del usuario: no hay `python` ni `pkill`; usar node o PowerShell. Desde 2026-10-01 el
+  Control de aplicaciones de Windows bloquea el binario nativo de oxlint en ese PC (no es del código).
+- Los QR del panel usan `appUrl` (de `APP_DOMAIN`, vía `/api/admin/me`), no `window.location`.
 
 ## Convenciones
 - Comentarios en español **sin tildes** en el código (como el código original); textos de la UI con
@@ -53,7 +59,7 @@ guarda lo que no se deduce leyendo el código.
 - Cambios de esquema: **agregar** una migración nueva en `MIGRATIONS` (`db.js`), nunca editar una publicada.
 
 ## Verificar cambios
-    cd server && npm test             # 20 pruebas de la API (flujo completo)
+    cd server && npm test             # 23 pruebas (API completa + config)
     npx oxlint && npm run build       # 0 errores esperados (hay ~22 warnings de estilo conocidos)
     cd server && npm run seed-demo && npm run loadtest -- --code <código>
 

@@ -17,11 +17,90 @@ teléfono, sin instalar nada:
   evento, duplicar un evento para el siguiente.
 - **Multi-evento**: nada de la RNR está en el código; cada evento se crea en el panel.
 
+## Instalación
+
+### Qué se necesita
+
+| | |
+|---|---|
+| **Servidor** | Raspberry Pi 5 (u otro Linux: Raspberry Pi OS 64 bits, Debian, Ubuntu). Node.js ≥ 22.13 (el script lo instala). Idealmente un SSD por USB para los datos. |
+| **Dominio** | Uno propio, gestionado en Cloudflare (plan gratuito). Ej.: `quest.ieee-ecuador.org` |
+| **API keys** | **Ninguna.** El proyecto no usa servicios externos. Los únicos secretos son `APP_SECRET` (se genera solo), las contraseñas del panel y la autorización de Cloudflare (la pide el script). |
+
+### Dónde va cada configuración
+
+| Qué | Dónde | Notas |
+|---|---|---|
+| **Dominio** | `server/.env` → `APP_DOMAIN` | **El único lugar.** Con él se arman los QR, el CORS y el túnel de Cloudflare. |
+| Secreto de firmas | `server/.env` → `APP_SECRET` | Lo genera `deploy/setup.sh`. |
+| Carpeta de datos | `server/.env` → `DATA_DIR` | Base `quest.db` + fotos `files/`. |
+| URL de la API para el frontend | `.env` (raíz) → `VITE_API_URL` | **Solo** si el frontend va en Cloudflare Pages. Con la instalación normal no hace falta. |
+| Eventos, retos, Ramas, logros | Panel `/admin` | Nada de eso se configura en archivos. |
+
+Plantillas comentadas: [`server/.env.example`](server/.env.example) y [`.env.example`](.env.example).
+Los `.env` reales están en `.gitignore`: nunca se suben al repo.
+
+### En el servidor (Raspberry Pi u otro Linux)
+
+```bash
+git clone https://github.com/clousck/RNR2026-XR-Experience.git ~/rnr-quest
+cd ~/rnr-quest
+./deploy/setup.sh --domain quest.tudominio.org --data-dir /mnt/ssd/rnr-quest
+./deploy/cloudflare-tunnel.sh
+```
+
+1. **`setup.sh`**: instala Node si falta, compila la página, crea `server/.env`
+   (dominio, `APP_SECRET`, carpeta de datos), pide el primer usuario del panel e
+   instala el servicio `rnr-quest` (arranca solo al encender la Pi).
+2. **`cloudflare-tunnel.sh`**: instala `cloudflared`, abre un enlace para
+   autorizar tu cuenta de Cloudflare, crea el túnel, apunta el dominio y lo deja
+   como servicio. No hay que abrir puertos en el router.
+3. Entra a `https://quest.tudominio.org/admin`, crea el evento y los retos.
+   Los demás usuarios del panel (SAC team) se crean en **Usuarios**.
+
+Actualizar a la última versión: `./deploy/update.sh`. Backups, opción con
+Cloudflare Pages, solución de problemas y checklist del día del evento:
+**[docs/deploy-pi.md](docs/deploy-pi.md)**.
+
+¿Cambió el dominio? Edita `APP_DOMAIN` en `server/.env`, corre
+`./deploy/cloudflare-tunnel.sh` y `sudo systemctl restart rnr-quest`. Hay que
+reimprimir los QR.
+
+### En tu computadora (desarrollo)
+
+Requiere Node.js ≥ 22.13.
+
+```bash
+npm install
+cd server && npm install
+npm run seed-demo                                # evento "demo" con un reto de cada tipo (imprime el código)
+npm run create-admin -- --username admin         # pide la contraseña
+npm run dev                                      # API en http://localhost:8787/api
+```
+
+En otra terminal, en la raíz:
+
+```bash
+npm run dev                                      # https://localhost:5173 (pasa /api a la API)
+```
+
+- Participante: `https://localhost:5173/e/demo?c=<código de seed-demo>`
+- Panel: `https://localhost:5173/admin`
+- Desde el celular en la misma red: `npm run build && npm run preview` y abrir
+  `https://<ip-de-tu-pc>:4173` (aceptar el certificado; la cámara exige HTTPS).
+
+En desarrollo no hace falta ningún `.env`: se usan valores de prueba.
+
+```bash
+cd server && npm test                                     # pruebas de la API
+cd server && npm run loadtest -- --code <código> --users 150
+```
+
 ## Arquitectura
 
 ```
 Frontend (React + Vite)          API (server/)              Raspberry Pi
-Cloudflare Pages o la Pi  ──▶  Node + Hono  ──▶  SQLite (quest.db) + fotos en disco
+servido por la API o Pages ──▶  Node + Hono  ──▶  SQLite (quest.db) + fotos en disco
 src/api/client.js es el único       /api/...            detrás de Cloudflare Tunnel
 contacto con el backend
 ```
@@ -35,23 +114,6 @@ contacto con el backend
   recuperación** en el perfil para seguir desde otro teléfono.
 - XP, niveles, logros y ranking se calculan a partir de las fotos aprobadas:
   aprobar, rechazar o borrar corrige todo automáticamente.
-
-Despliegue en la Pi, Cloudflare, backups y checklist del día del evento:
-**[docs/deploy-pi.md](docs/deploy-pi.md)**.
-
-## Desarrollo
-
-    npm install && (cd server && npm install)
-    cd server && npm run seed-demo                 # evento "demo" con retos de cada tipo
-    cd server && npm run create-admin -- --username admin
-    cd server && npm run dev                       # API en http://localhost:8787/api
-    npm run dev                                    # https://localhost:5173 (proxy /api → 8787)
-
-Entrar como participante: `https://localhost:5173/e/demo?c=<código que imprime seed-demo>`.
-Panel: `https://localhost:5173/admin`.
-
-    cd server && npm test        # pruebas de la API (flujo completo)
-    cd server && npm run loadtest -- --code <código> --users 150
 
 ## Estructura
 
@@ -71,7 +133,8 @@ Panel: `https://localhost:5173/admin`.
       routes/admin.js             API del panel
       storage.js                  fotos en disco
     server/scripts/               create-admin, seed-demo, backup, loadtest
-    docs/deploy-pi.md             despliegue
+    deploy/                       setup.sh, cloudflare-tunnel.sh, update.sh (servidor)
+    docs/deploy-pi.md             despliegue en detalle
 
 ### Rutas
 

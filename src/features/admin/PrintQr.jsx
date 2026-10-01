@@ -3,7 +3,7 @@ import { listChallenges } from '../../api/admin'
 import { useAsync } from '../../shared/useAsync'
 import { Spinner } from '../quest/ui'
 import { useEventAdmin } from './AdminContext'
-import QrImage, { checkpointUrl, eventJoinUrl } from './QrImage'
+import QrImage, { appHost, checkpointUrl, eventJoinUrl } from './QrImage'
 
 /**
  * Hoja para imprimir: el QR de entrada al evento y el de cada checkpoint.
@@ -33,7 +33,7 @@ export default function PrintQr() {
             <QrImage value={eventJoinUrl(event)} size={260} />
             <p>Escanea con la cámara de tu teléfono</p>
             <p className="print-code">
-              {window.location.host}/entrar · código <strong>{event.joinCode}</strong>
+              {appHost()}/entrar · código <strong>{event.joinCode}</strong>
             </p>
           </div>
         )}

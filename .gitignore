@@ -27,3 +27,6 @@ dist-ssr
 # Servidor: datos y secretos locales
 server/data
 server/.env
+
+# Configuracion local del frontend (ver .env.example)
+.env

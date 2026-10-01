@@ -17,7 +17,7 @@ import {
 import { useAsync } from '../../shared/useAsync'
 import { ErrorBox } from '../quest/ui'
 import { useAdmin, useEventAdmin } from './AdminContext'
-import QrImage, { eventJoinUrl, fromLocalInput, toLocalInput } from './QrImage'
+import QrImage, { appHost, eventJoinUrl, fromLocalInput, hasPublicOrigin, toLocalInput } from './QrImage'
 
 export default function SettingsAdmin() {
   const { isAdmin } = useAdmin()
@@ -100,11 +100,17 @@ function AccessCard() {
   return (
     <div className="card qr-card">
       <h3>Acceso de participantes</h3>
+      {!hasPublicOrigin() && (
+        <p className="notice">
+          El servidor no tiene <strong>APP_DOMAIN</strong> configurado: los QR usan la dirección de este navegador (
+          {appHost()}). Configúralo en <code>server/.env</code> antes de imprimir.
+        </p>
+      )}
       <QrImage value={url} size={180} />
       <p className="code-text">{event.joinCode}</p>
       <p className="muted small break">{url}</p>
       <p className="muted small">
-        El QR ya incluye el código. Sin QR, se entra en <strong>{window.location.host}/entrar</strong> con el código. Solo quien lo
+        El QR ya incluye el código. Sin QR, se entra en <strong>{appHost()}/entrar</strong> con el código. Solo quien lo
         tenga puede unirse y ver la galería.
       </p>
       <div className="row">

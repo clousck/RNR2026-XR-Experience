@@ -3,6 +3,7 @@ import { Link, Route, Routes } from 'react-router'
 import { ADMIN_LOGOUT_EVENT, adminSession, getAdminMe, login, logout } from '../../api/admin'
 import { ErrorBox, Spinner } from '../quest/ui'
 import { AdminContext } from './AdminContext'
+import { setAppOrigin } from './QrImage'
 import EventAdmin from './EventAdmin'
 import EventsList from './EventsList'
 import UsersAdmin from './UsersAdmin'
@@ -19,7 +20,10 @@ export default function AdminApp() {
       return
     }
     getAdminMe()
-      .then((r) => setAdmin(r.admin))
+      .then((r) => {
+        setAppOrigin(r.appUrl)
+        setAdmin(r.admin)
+      })
       .catch(() => setAdmin(null))
   }, [])
 
@@ -48,8 +52,9 @@ export default function AdminApp() {
     return (
       <div className="quest admin">
         <Login
-          onLogin={(token, a) => {
+          onLogin={(token, a, appUrl) => {
             adminSession.set(token)
+            setAppOrigin(appUrl)
             setAdmin(a)
           }}
         />
@@ -96,7 +101,7 @@ function Login({ onLogin }) {
     setError(null)
     try {
       const res = await login(username, password)
-      onLogin(res.token, res.admin)
+      onLogin(res.token, res.admin, res.appUrl)
     } catch (err) {
       setError(err)
       setBusy(false)

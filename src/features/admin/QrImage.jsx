@@ -17,8 +17,15 @@ export default function QrImage({ value, size = 220, className = '' }) {
   return <img className={`qr-img ${className}`} src={src} width={size} height={size} alt={`QR: ${value}`} />
 }
 
-/** URL publica del frontend (donde abre el QR). */
-export const appOrigin = () => window.location.origin
+// URL publica del frontend (APP_DOMAIN del servidor). Sin ella, la del
+// navegador: si el panel se abre por localhost, los QR saldrian con localhost.
+let publicOrigin = null
+export const setAppOrigin = (url) => {
+  publicOrigin = url ? url.replace(/\/+$/, '') : null
+}
+export const appOrigin = () => publicOrigin || window.location.origin
+export const appHost = () => new URL(appOrigin()).host
+export const hasPublicOrigin = () => !!publicOrigin
 export const eventJoinUrl = (event) => `${appOrigin()}/e/${event.slug}?c=${event.joinCode}`
 export const checkpointUrl = (event, challenge) => `${appOrigin()}/e/${event.slug}/q/${challenge.qrCode}`
 

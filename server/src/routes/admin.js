@@ -76,7 +76,7 @@ export function adminRoutes(svc) {
       id: admin.id,
       expires,
     })
-    return c.json({ token, admin: publicAdmin(admin) })
+    return c.json({ token, admin: publicAdmin(admin), appUrl: config.appUrl || null })
   })
 
   // Descarga del ZIP: la firma de la URL es la autorizacion (un <a href>
@@ -136,7 +136,7 @@ export function adminRoutes(svc) {
     return c.json({ ok: true })
   })
 
-  r.get('/me', (c) => c.json({ admin: publicAdmin(c.get('admin')) }))
+  r.get('/me', (c) => c.json({ admin: publicAdmin(c.get('admin')), appUrl: config.appUrl || null }))
 
   // --- helpers ---
 

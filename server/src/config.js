@@ -1,5 +1,12 @@
 import { resolve } from 'node:path'
 
+/** "quest.ieee.org", "https://quest.ieee.org/" → "https://quest.ieee.org" */
+export function publicUrl(domain) {
+  const d = String(domain ?? '').trim().replace(/\/+$/, '')
+  if (!d) return ''
+  return /^https?:\/\//.test(d) ? d : `https://${d}`
+}
+
 /**
  * Configuracion desde variables de entorno (ver .env.example).
  * Nada del evento vive aca: los eventos se crean desde el panel.
@@ -10,6 +17,7 @@ export function loadConfig(env = process.env) {
   if (production && secret.length < 32) {
     throw new Error('APP_SECRET debe tener al menos 32 caracteres en produccion')
   }
+  const appUrl = publicUrl(env.APP_DOMAIN)
   return {
     production,
     port: Number(env.PORT || 8787),
@@ -17,9 +25,12 @@ export function loadConfig(env = process.env) {
     dataDir: resolve(env.DATA_DIR || './data'),
     // Firma las URLs de las fotos. En desarrollo se usa uno fijo.
     secret: secret || 'dev-secret-no-usar-en-produccion-0000',
-    // Origenes permitidos para CORS (el frontend en Cloudflare Pages).
+    // URL publica donde abren los participantes (APP_DOMAIN). Con ella se
+    // arman los QR aunque el panel se abra por localhost o por la IP local.
+    appUrl,
+    // Origenes permitidos para CORS. Por defecto, el propio APP_DOMAIN.
     // Vacio = cualquiera: la API usa tokens bearer, no cookies.
-    corsOrigins: (env.CORS_ORIGINS || '')
+    corsOrigins: (env.CORS_ORIGINS || appUrl)
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean),
