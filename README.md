@@ -23,62 +23,41 @@ teléfono, sin instalar nada:
 
 | | |
 |---|---|
-| **Servidor** | Raspberry Pi 5 (u otro Linux: Raspberry Pi OS 64 bits, Debian, Ubuntu). Node.js ≥ 22.13 (el script lo instala). Idealmente un SSD por USB para los datos. |
-| **Dominio** | Uno propio, gestionado en Cloudflare (plan gratuito). Ej.: `quest.ieee-ecuador.org` |
-| **API keys** | **Ninguna.** El proyecto no usa servicios externos. Los únicos secretos son `APP_SECRET` (se genera solo), las contraseñas del panel y la autorización de Cloudflare (la pide el script). |
+| **Servidor** | Raspberry Pi 5 (u otro Linux de 64 bits) con **Docker**. Idealmente un SSD por USB para los datos. |
+| **Dominio** | `rnr.penginexr.com`, gestionado en Cloudflare (plan gratuito). |
+| **API keys** | **Ninguna.** El proyecto no usa servicios externos. Los únicos secretos son `APP_SECRET`, el token del túnel de Cloudflare y las contraseñas del panel. |
 
 ### Dónde va cada configuración
 
 | Qué | Dónde | Notas |
 |---|---|---|
-| **Dominio** | `server/.env` → `APP_DOMAIN` | **El único lugar.** Con él se arman los QR, el CORS y el túnel de Cloudflare. |
-| Secreto de firmas | `server/.env` → `APP_SECRET` | Lo genera `deploy/setup.sh`. |
-| Carpeta de datos | `server/.env` → `DATA_DIR` | Base `quest.db` + fotos `files/`. |
-| URL de la API para el frontend | `.env` (raíz) → `VITE_API_URL` | **Solo** si el frontend va en Cloudflare Pages. Con la instalación normal no hace falta. |
+| **Dominio** | `server/.env` → `APP_DOMAIN` | **El único lugar.** Con él se arman los QR y el CORS. El túnel apunta a ese mismo nombre (panel de Cloudflare). |
+| Secreto de firmas | `server/.env` → `APP_SECRET` | `openssl rand -base64 32`. |
+| Túnel de Cloudflare | `server/.env` → `TUNNEL_TOKEN` | Se copia del panel de Cloudflare. |
+| Carpeta de datos, backups | `.env` (raíz) → `RNR_DATA_DIR`, `RNR_BACKUP_DIR` | Opcional. Por defecto, un volumen de Docker y `./backups`. |
 | Eventos, retos, Ramas, logros | Panel `/admin` | Nada de eso se configura en archivos. |
 
 Plantillas comentadas: [`server/.env.example`](server/.env.example) y [`.env.example`](.env.example).
 Los `.env` reales están en `.gitignore`: nunca se suben al repo.
 
-### En el servidor (Raspberry Pi u otro Linux)
+### En el servidor (Docker)
+
+La página y la API van en un solo contenedor; el túnel de Cloudflare, en otro.
+No hay que abrir puertos en el router.
 
 ```bash
 git clone https://github.com/clousck/RNR2026-XR-Experience.git ~/rnr-quest
 cd ~/rnr-quest
-./deploy/setup.sh --domain quest.tudominio.org --data-dir /mnt/ssd/rnr-quest
-./deploy/cloudflare-tunnel.sh
-```
-
-1. **`setup.sh`**: instala Node si falta, compila la página, crea `server/.env`
-   (dominio, `APP_SECRET`, carpeta de datos), pide el primer usuario del panel e
-   instala el servicio `rnr-quest` (arranca solo al encender la Pi).
-2. **`cloudflare-tunnel.sh`**: instala `cloudflared`, abre un enlace para
-   autorizar tu cuenta de Cloudflare, crea el túnel, apunta el dominio y lo deja
-   como servicio. No hay que abrir puertos en el router.
-3. Entra a `https://quest.tudominio.org/admin`, crea el evento y los retos.
-   Los demás usuarios del panel (SAC team) se crean en **Usuarios**.
-
-Actualizar a la última versión: `./deploy/update.sh`. Backups, opción con
-Cloudflare Pages, solución de problemas y checklist del día del evento:
-**[docs/deploy-pi.md](docs/deploy-pi.md)**.
-
-¿Cambió el dominio? Edita `APP_DOMAIN` en `server/.env`, corre
-`./deploy/cloudflare-tunnel.sh` y `sudo systemctl restart rnr-quest`. Hay que
-reimprimir los QR.
-
-### Con Docker
-
-En lugar de `setup.sh`, la app y el túnel de Cloudflare pueden correr en
-contenedores (Pi o cualquier PC):
-
-```bash
-cp server/.env.example server/.env     # APP_DOMAIN, APP_SECRET y TUNNEL_TOKEN
+cp server/.env.example server/.env     # completar APP_SECRET y TUNNEL_TOKEN
 mkdir -p backups
 docker compose --profile tunnel up -d --build
 docker compose exec app npm run create-admin -- --username admin
 ```
 
-Guía completa (datos en SSD, backups, actualizar): **[docs/docker.md](docs/docker.md)**.
+Luego: `https://rnr.penginexr.com/admin`. Actualizar: `git pull && docker compose up -d --build`.
+
+Guía paso a paso desde una Pi recién instalada (Docker, SSD, túnel, backups,
+checklist del evento, problemas comunes): **[docs/docker.md](docs/docker.md)**.
 
 ### En tu computadora (desarrollo)
 
@@ -114,12 +93,12 @@ cd server && npm run loadtest -- --code <código> --users 150
 
 ```
 Frontend (React + Vite)          API (server/)              Raspberry Pi
-servido por la API o Pages ──▶  Node + Hono  ──▶  SQLite (quest.db) + fotos en disco
+servido por la API    ──▶  Node + Hono  ──▶  SQLite (quest.db) + fotos en disco
 src/api/client.js es el único       /api/...            detrás de Cloudflare Tunnel
 contacto con el backend
 ```
 
-- El frontend solo habla con la API a través de `src/api/` (`VITE_API_URL`).
+- El frontend solo habla con la API a través de `src/api/` (`/api` del mismo dominio).
 - Las fotos pasan por `server/src/storage.js`: hoy disco local, mañana R2/S3
   implementando los mismos métodos.
 - Las fotos **no son públicas**: la API entrega URLs firmadas con vencimiento
@@ -147,8 +126,8 @@ contacto con el backend
       routes/admin.js             API del panel
       storage.js                  fotos en disco
     server/scripts/               create-admin, seed-demo, backup, loadtest
-    deploy/                       setup.sh, cloudflare-tunnel.sh, update.sh (servidor)
-    docs/deploy-pi.md             despliegue en detalle
+    Dockerfile, docker-compose.yml   imagen (página + API) y túnel de Cloudflare
+    docs/docker.md                despliegue en detalle
 
 ### Rutas
 
@@ -297,21 +276,3 @@ La app detecta estos casos y avisa en pantalla:
 - **Gráfico 3D perdido** (iOS le quita la GPU a la página por memoria): aviso con
   botón para recargar; three.js intenta recuperarlo solo. La foto se renderiza por
   mosaicos de 1024×1024 para no pedir de golpe un canvas enorme a la GPU.
-
-## Deploy en Cloudflare Pages
-
-Workers & Pages → Create → Pages → *Connect to Git* → este repo, con:
-
-| Campo                  | Valor           |
-|------------------------|-----------------|
-| Framework preset       | `React (Vite)`  |
-| Build command          | `npm run build` |
-| Build output directory | `dist`          |
-
-| Variable de entorno    | `VITE_API_URL=https://api.tudominio.org/api` |
-
-La versión de Node sale de `.node-version` (22); Vite 8 no compila con Node 18.
-Cada push a `main` redespliega solo. Cloudflare da HTTPS, que es obligatorio
-para la cámara. Es un SPA: sin `404.html`, Pages sirve `index.html` en todas las
-rutas (`/e/...`, `/admin`), no hace falta configurar rewrites. La API va en la
-Pi: ver [docs/deploy-pi.md](docs/deploy-pi.md).

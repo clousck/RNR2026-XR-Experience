@@ -2,7 +2,7 @@
  * Unico punto de contacto con el backend. El resto de la app no sabe que
  * servidor hay detras: solo usa estas funciones.
  *
- * VITE_API_URL: base de la API (p. ej. https://api.tudominio.org/api).
+ * VITE_API_URL: base de la API (p. ej. https://otro-dominio.org/api; vacio = /api).
  * Sin definir, usa /api en el mismo origen (proxy de Vite o todo en la Pi).
  */
 export const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')

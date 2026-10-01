@@ -14,10 +14,7 @@ RUN npm ci --no-audit --no-fund
 COPY index.html vite.config.js ./
 COPY public ./public
 COPY src ./src
-# Vacio = la pagina usa /api (misma imagen). Solo hace falta si la pagina va
-# en Cloudflare Pages y la API en otro dominio (ver .env.example).
-ARG VITE_API_URL=
-ENV VITE_API_URL=${VITE_API_URL}
+# La pagina llama a /api del mismo dominio: no hace falta VITE_API_URL
 RUN npm run build
 
 # ---------- 2. Dependencias del servidor ----------

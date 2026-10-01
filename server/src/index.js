@@ -9,7 +9,7 @@ import { LocalStorage } from './storage.js'
 try {
   process.loadEnvFile()
 } catch {
-  // sin .env: se usan las variables del sistema (systemd)
+  // sin .env: se usan las variables del sistema (Docker las pasa desde server/.env)
 }
 
 const config = loadConfig()

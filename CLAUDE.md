@@ -2,22 +2,23 @@
 
 RNR Quest: gamificación web para eventos de IEEE Ecuador. Nació como el booth AR
 "Foto con Watt" y evolucionó sin reescribirse. Qué hace, rutas, comandos y
-estructura: **README.md**. Despliegue: **docs/deploy-pi.md**. Este archivo solo
+estructura: **README.md**. Despliegue: **docs/docker.md**. Este archivo solo
 guarda lo que no se deduce leyendo el código.
 
 ## Usuario y contexto
 - Se usará en **2027** en dos eventos: **Taller de Directivos** y **RNR** (multi-evento real).
 - ~100–150 participantes. Moderan el usuario y el **SAC team (~10 personas)**.
 - Servidor: **Raspberry Pi 5, 8 GB, 32 GB** (probablemente microSD → recomendar SSD), detrás de
-  **Cloudflare Tunnel**. El **dominio aún no está comprado**: va en un solo lugar,
-  `server/.env` → `APP_DOMAIN` (QR, CORS y túnel salen de ahí). No hay API keys externas.
-- Instalación en servidor: `deploy/setup.sh` + `deploy/cloudflare-tunnel.sh` (sin probar aún en una
-  Pi real; solo validados con `bash -n` y simulando la edición del .env). Por defecto todo en la Pi
-  (la API sirve `dist/` con `STATIC_DIR`); Cloudflare Pages es opcional.
-- Alternativa con Docker (`Dockerfile` + `docker-compose.yml`, guía `docs/docker.md`): una imagen
-  con página + API, datos en `/data`, usuario `node` (uid 1000), túnel como contenedor
-  `cloudflared` con token (perfil `tunnel`). Compose fija HOST/DATA_DIR/STATIC_DIR y pisa
-  `server/.env`. Sin probar aún: el PC del usuario no tiene Docker.
+  **Cloudflare Tunnel**. Dominio (por ahora): **rnr.penginexr.com**. Va en un solo lugar,
+  `server/.env` → `APP_DOMAIN` (QR y CORS salen de ahí). No hay API keys externas.
+- Despliegue **solo con Docker** (desde 2026-10-01; se quitaron `deploy/` con systemd y Cloudflare
+  Pages): `Dockerfile` (página + API en una imagen, datos en `/data`, usuario `node` uid 1000) y
+  `docker-compose.yml` (`app` + `cloudflared` con token, perfil `tunnel`; perfil `quick` =
+  trycloudflare para pruebas). Compose fija NODE_ENV/HOST/PORT/DATA_DIR/STATIC_DIR y pisa
+  `server/.env`; el `.env` de la raíz solo lleva opciones de Docker (`RNR_*`, `COMPOSE_PROFILES`).
+  Sin probar aún en la Pi: el PC del usuario no tiene Docker.
+- Pages se dejó porque solo servía la página: el login daba 405 (POST a un hosting estático).
+  `VITE_API_URL` sigue en el código pero no se usa.
 - Fotos **no públicas**: solo participantes del evento y organizadores.
 - El usuario escribe en español y prefiere: revisar diseño antes de cambios grandes, no
   reescribir, explicaciones claras. Commits en `main` (historial en español).
@@ -26,8 +27,8 @@ guarda lo que no se deduce leyendo el código.
 - Frontend React 19 + Vite 8 (raíz del repo) / API en `server/` (Node ≥22.13, Hono,
   **`node:sqlite`** para no compilar módulos nativos en la Pi) / fotos en disco vía
   `server/src/storage.js` (interfaz cambiable a R2/S3).
-- El frontend solo habla con el backend a través de `src/api/` (`VITE_API_URL`, por defecto `/api`;
-  Vite hace proxy a `localhost:8787`). La API puede servir también `dist/` (`STATIC_DIR`).
+- El frontend solo habla con el backend a través de `src/api/` (`/api` del mismo dominio;
+  en desarrollo Vite hace proxy a `localhost:8787`). La API sirve también `dist/` (`STATIC_DIR`).
 - **XP, niveles, logros y ranking se calculan** desde las submissions aprobadas (no hay contadores
   guardados) → aprobar/rechazar/borrar corrige todo solo. No hay tabla ParticipantBadge.
 - Fotos: el teléfono las reduce a 2048 px JPEG y quita el EXIF (`src/shared/imageResize.js`); la API
@@ -71,6 +72,6 @@ guarda lo que no se deduce leyendo el código.
 - Fases 0–5 implementadas: API, app del participante, panel, cola offline, backups, loadtest.
 - Probado: tests de API, recorrido E2E en navegador headless (Edge + puppeteer-core, cámara
   falsa), carga de 150 usuarios simultáneos en el PC (no en la Pi).
-- **Pendiente**: probar en iPhone y Android reales (cámara, AR, subida); desplegar en la Pi
-  cuando haya dominio; decidir si `/` pasa a ser `/entrar` con el dominio nuevo; decidir
+- **Pendiente**: probar en iPhone y Android reales (cámara, AR, subida); desplegar en la Pi con
+  Docker (docs/docker.md); decidir si `/` pasa a ser `/entrar` con el dominio nuevo; decidir
   ranking por Rama suma vs promedio (hoy suma).

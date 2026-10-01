@@ -1,130 +1,268 @@
-# Despliegue con Docker
+# Despliegue en la Raspberry Pi (Docker)
 
-Alternativa a `deploy/setup.sh` (systemd): la misma app en un contenedor. Sirve
-en la **Raspberry Pi 5** (arm64) y en cualquier PC/servidor (amd64). Lo que no
-cambia (dominio, checklist del evento, Cloudflare Pages) está en
-[deploy-pi.md](deploy-pi.md).
+Guía paso a paso, desde una Pi recién instalada hasta RNR Quest funcionando en
+**https://rnr.penginexr.com**. Sirve igual en cualquier PC/servidor Linux de
+64 bits. Pensada para una Raspberry Pi 5 (8 GB) y eventos de ~150 personas.
 
 ```
 Teléfonos ──HTTPS──▶ Cloudflare ──túnel──▶ contenedor cloudflared
-                                              └─▶ contenedor app (app:8787)
+ rnr.penginexr.com                            └─▶ contenedor app (app:8787)
                                                    ├─ página (dist/) y API (/api)
                                                    └─ /data → quest.db + files/
 ```
 
 | Archivo | Qué hace |
 |---|---|
-| `Dockerfile` | Compila la página, instala la API y arma una imagen con Node 22 que corre como usuario `node`. |
-| `docker-compose.yml` | Servicio `app` (puerto solo en `127.0.0.1:8787`, datos en `/data`) y `cloudflared` (perfil `tunnel`). |
-| `server/.env` | La misma configuración de siempre: `APP_DOMAIN`, `APP_SECRET` y, con Docker, `TUNNEL_TOKEN`. |
+| `Dockerfile` | Compila la página, instala la API y arma una imagen con Node 22 que corre como usuario `node` (uid 1000). |
+| `docker-compose.yml` | Servicio `app` y el túnel `cloudflared` (perfil `tunnel`). Extras para pruebas: perfil `quick` y `RNR_BIND`. |
+| `server/.env` | Configuración del servidor: `APP_DOMAIN`, `APP_SECRET`, `TUNNEL_TOKEN`. |
+| `.env` (raíz, opcional) | Opciones de Docker: `RNR_DATA_DIR`, `RNR_BACKUP_DIR`, `COMPOSE_PROFILES`, `RNR_BIND`. |
 
-## 1. Instalar Docker (en la Pi)
+## 0. Qué se necesita
+
+- Raspberry Pi 5 con **Raspberry Pi OS Lite 64 bits**. Con Raspberry Pi Imager,
+  en *Editar ajustes*: nombre de host (p. ej. `rnr-quest`), usuario y contraseña,
+  wifi si no va por cable, y **activar SSH**.
+- Mejor por **cable de red** que por wifi.
+- El dominio `penginexr.com` en una cuenta de **Cloudflare** (plan gratuito).
+- Recomendado: un **SSD o pendrive USB 3** para los datos. Una foto ocupa
+  ~0,5 MB más una miniatura de ~30 KB: 150 personas × 15 fotos ≈ **1,2 GB por
+  evento**. Las microSD se corrompen con cortes de luz y escrituras constantes.
+- Otra computadora en la misma red para conectarse por SSH.
+
+## 1. Conectarse a la Pi
+
+Desde la computadora (PowerShell en Windows):
 
 ```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER     # cerrar sesión y volver a entrar
+ssh <usuario>@rnr-quest.local          # o ssh <usuario>@<ip-de-la-pi>
 ```
 
-## 2. Configurar
+Si `rnr-quest.local` no responde, busca la IP de la Pi en el router. Una vez
+dentro, `hostname -I` muestra la IP (la primera, p. ej. `192.168.1.50`); anótala.
+
+Todos los comandos que siguen se escriben **en la Pi** (en esa sesión SSH).
+
+## 2. Preparar la Pi e instalar Docker
+
+```bash
+sudo apt-get update && sudo apt-get full-upgrade -y
+sudo apt-get install -y git
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+exit                                   # salir y volver a entrar por SSH
+```
+
+Al volver a entrar, comprobar:
+
+```bash
+docker run --rm hello-world            # debe decir "Hello from Docker!"
+docker compose version
+```
+
+Docker queda como servicio: arranca solo al encender la Pi, y con él los
+contenedores de RNR Quest.
+
+## 3. (Recomendado) Preparar el SSD
+
+Saltar este paso si los datos van en la microSD.
+
+```bash
+lsblk -f                               # el SSD aparece como sda (sda1 si tiene partición)
+```
+
+**Si el SSD es nuevo o se puede borrar** (esto lo formatea y **borra todo** lo
+que tenga):
+
+```bash
+sudo mkfs.ext4 -L rnr-ssd /dev/sda1    # revisar bien que sea el SSD
+```
+
+Montarlo siempre en `/mnt/ssd`:
+
+```bash
+sudo mkdir -p /mnt/ssd
+echo 'LABEL=rnr-ssd /mnt/ssd ext4 defaults,noatime,nofail 0 2' | sudo tee -a /etc/fstab
+sudo systemctl daemon-reload && sudo mount -a
+df -h /mnt/ssd                         # debe mostrar el tamaño del SSD
+sudo mkdir -p /mnt/ssd/rnr-quest /mnt/ssd/rnr-backups
+sudo chown 1000:1000 /mnt/ssd/rnr-quest /mnt/ssd/rnr-backups
+```
+
+El `chown 1000` es porque el contenedor corre como el usuario `node` (uid 1000),
+no como root. (`nofail`: si el SSD no está conectado, la Pi arranca igual.)
+
+## 4. Descargar y configurar RNR Quest
 
 ```bash
 git clone https://github.com/clousck/RNR2026-XR-Experience.git ~/rnr-quest
 cd ~/rnr-quest
 cp server/.env.example server/.env
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"   # o: openssl rand -base64 32
-nano server/.env      # APP_DOMAIN y APP_SECRET (el valor de arriba)
+openssl rand -base64 32                # copia el resultado: es el APP_SECRET
+nano server/.env
 ```
 
-`HOST`, `PORT`, `DATA_DIR` y `STATIC_DIR` los fija `docker-compose.yml`; no
-hace falta tocarlos.
+En `nano`:
 
-## 3. Arrancar
+- `APP_SECRET=` → pegar el valor generado.
+- `APP_DOMAIN=rnr.penginexr.com` ya viene puesto.
+- `TUNNEL_TOKEN=` → se completa en el paso 5.
+
+Guardar con `Ctrl+O`, `Enter`, y salir con `Ctrl+X`.
+
+Opciones de Docker en el `.env` de la raíz (hay una plantilla en `.env.example`).
+Con el túnel siempre activo y, si hiciste el paso 3, los datos en el SSD:
 
 ```bash
-mkdir -p backups                       # antes del primer arranque (ver Backups)
-docker compose up -d --build
-docker compose ps                      # app debe quedar "healthy"
-curl http://127.0.0.1:8787/api/health
+cat > .env <<'EOF'
+COMPOSE_PROFILES=tunnel
+RNR_DATA_DIR=/mnt/ssd/rnr-quest
+RNR_BACKUP_DIR=/mnt/ssd/rnr-backups
+EOF
+```
+
+Sin SSD, solo `COMPOSE_PROFILES=tunnel`, y crear la carpeta de backups local
+**antes** de arrancar (si no existe, Docker la crea como root y el backup no
+puede escribir):
+
+```bash
+echo 'COMPOSE_PROFILES=tunnel' > .env
+mkdir -p backups
+```
+
+## 5. Crear el túnel de Cloudflare
+
+El túnel publica la Pi en `rnr.penginexr.com` sin abrir puertos en el router ni
+tener IP fija: la Pi se conecta hacia Cloudflare.
+
+1. **Si `rnr.penginexr.com` estaba en Cloudflare Pages**: Workers & Pages → el
+   proyecto → *Custom domains* → quitar `rnr.penginexr.com` (o borrar el
+   proyecto). Luego, en *DNS* de `penginexr.com`, borrar el registro `rnr` si
+   quedó. Si no, el túnel no puede usar ese nombre (y Pages seguiría
+   respondiendo `405` al iniciar sesión).
+2. Cloudflare → *Zero Trust* → *Networks* → *Tunnels* → *Create a tunnel* →
+   *Cloudflared*, nombre `rnr-quest`.
+3. Copiar el **token**: el texto largo después de `--token` en los comandos que
+   muestra. No hace falta instalar nada de lo que sugiere esa página.
+4. *Public Hostname* → *Add*: subdominio `rnr`, dominio `penginexr.com`, tipo
+   **HTTP**, URL **`app:8787`**. Cloudflare crea el registro DNS solo.
+5. En la Pi: `nano server/.env` → `TUNNEL_TOKEN=<token>`.
+
+## 6. Arrancar
+
+```bash
+docker compose up -d --build           # la primera vez tarda varios minutos
+docker compose ps                      # app (healthy) y cloudflared en marcha
+curl http://127.0.0.1:8787/api/health  # {"ok":true,...}
+curl https://rnr.penginexr.com/api/health
+```
+
+Crear el primer usuario del panel (pide la contraseña):
+
+```bash
 docker compose exec app npm run create-admin -- --username victor --name "Victor" --role admin
 ```
 
-El primer `--build` en la Pi tarda unos minutos (instala dependencias y compila
-la página).
+Abrir **https://rnr.penginexr.com/admin**, crear el evento y los retos. Los
+demás usuarios (SAC team) se crean desde el panel → **Usuarios**: *moderador*
+(revisa fotos, gestiona participantes, descarga) o *admin* (además edita retos
+y ajustes).
 
-### Datos en un SSD
+## 7. (Opcional) Abrir el panel por la IP local
 
-Por defecto la base y las fotos van en el volumen de Docker `rnr-data` (dentro
-de `/var/lib/docker`, o sea, en la microSD). Para ponerlos en un SSD:
-
-```bash
-sudo mkdir -p /mnt/ssd/rnr-quest && sudo chown 1000:1000 /mnt/ssd/rnr-quest
-RNR_DATA_DIR=/mnt/ssd/rnr-quest docker compose up -d
-```
-
-Para no repetir la variable, ponla en un archivo `.env` en la raíz
-(`RNR_DATA_DIR=/mnt/ssd/rnr-quest`). Ojo: ese `.env` es también el del
-frontend; no copies ahí `.env.example` entero, porque su `VITE_API_URL` cambiaría
-la compilación.
-
-El `chown 1000` es porque el contenedor corre como el usuario `node` (uid 1000),
-no como root.
-
-## 4. Publicar con Cloudflare Tunnel
-
-**Opción A: túnel en un contenedor (todo en Docker).**
-
-1. Cloudflare → *Zero Trust* → *Networks* → *Tunnels* → *Create a tunnel* →
-   *Cloudflared*, nombre `rnr-quest`. Copia el **token** (el texto largo después
-   de `--token`).
-2. En la pestaña *Public Hostname*: el dominio de `APP_DOMAIN` → servicio
-   **HTTP**, URL **`app:8787`**.
-3. En `server/.env`: `TUNNEL_TOKEN=<token>`.
-4. `docker compose --profile tunnel up -d`
-
-Para no escribir `--profile tunnel` cada vez: `COMPOSE_PROFILES=tunnel` en el
-`.env` de la raíz.
-
-**Opción B: `cloudflared` en el host.** `./deploy/cloudflare-tunnel.sh` funciona
-igual: apunta a `127.0.0.1:8787`, que es donde Compose publica la app.
-
-## 5. Backups
-
-`backups/` (o `RNR_BACKUP_DIR`) se monta en el contenedor como `/backups`.
-Créala **antes** del primer arranque: si no existe, Docker la crea como root y
-el backup no puede escribir.
+Útil si el túnel no anda y hay que entrar al panel desde la red del lugar:
 
 ```bash
-crontab -e
-# cada 15 min: instantánea de la base + copia incremental de las fotos
-*/15 * * * * cd /home/pi/rnr-quest && docker compose exec -T app npm run backup -- /backups >> /tmp/rnr-backup.log 2>&1
+echo 'RNR_BIND=0.0.0.0' >> .env
+docker compose up -d
 ```
 
-Para un pendrive: `RNR_BACKUP_DIR=/media/usb/rnr-quest-backup` (con `chown 1000:1000`).
+Desde la misma red: `http://<ip-de-la-pi>:8787/admin`. Solo para el panel:
+**la cámara no funciona** en los teléfonos sin HTTPS. Para cerrarlo, borrar la
+línea `RNR_BIND` de `.env` y `docker compose up -d`.
 
-Restaurar: `docker compose stop app`, copiar la instantánea como `quest.db` y la
-carpeta `files/` en la carpeta de datos, `docker compose start app`. Con el
-volumen por defecto se llega a esa carpeta así:
-`docker run --rm -v rnr-quest_rnr-data:/data -v "$PWD/backups:/backups" busybox sh`.
+(También existe `docker compose --profile quick up -d`: un túnel temporal
+`https://<algo>.trycloudflare.com` sin cuenta, que aparece en
+`docker compose logs cloudflared-quick`. Con `APP_DOMAIN` puesto, los QR siguen
+apuntando a `rnr.penginexr.com`.)
 
-## 6. Comandos útiles
+## 8. Backups automáticos
 
-| Para | Comando |
+```bash
+crontab -e                             # elegir nano si pregunta
+```
+
+Agregar al final (cada 15 min: instantánea de la base + copia incremental de
+las fotos; conserva las últimas 48):
+
+```
+*/15 * * * * cd ~/rnr-quest && docker compose exec -T app npm run backup -- /backups >> /tmp/rnr-backup.log 2>&1
+```
+
+Probarlo a mano una vez: `docker compose exec app npm run backup -- /backups`.
+Los backups quedan en `RNR_BACKUP_DIR` (o `~/rnr-quest/backups`). Lo ideal es
+que estén en **otro disco** que los datos.
+
+Restaurar: `docker compose stop app`, copiar una instantánea como `quest.db` y
+la carpeta `files/` en la carpeta de datos (`RNR_DATA_DIR`), `docker compose
+start app`. Con el volumen por defecto (sin SSD), se entra a los datos así:
+`docker run --rm -it -v rnr-quest_rnr-data:/data -v "$PWD/backups:/backups" busybox sh`.
+
+Después del evento, descarga además el ZIP de fotos (panel → Galería →
+Descargar ZIP) y guárdalo aparte.
+
+## 9. Comprobar que arranca sola
+
+```bash
+sudo reboot
+# esperar 1-2 minutos, volver a entrar por SSH
+cd ~/rnr-quest && docker compose ps    # todo "Up", app (healthy)
+```
+
+## 10. Antes del evento (checklist)
+
+1. Prueba de carga desde **otra** red (mide la Pi y el túnel juntos), desde una
+   computadora con el repo y Node, contra un evento de prueba
+   (`docker compose exec app npm run seed-demo` crea uno e imprime el código):
+   `cd server && npm run loadtest -- --url https://rnr.penginexr.com/api --code <código>`
+2. Crear el evento (o **duplicar** el del Taller), cargar Ramas y retos, revisar
+   niveles y logros.
+3. Imprimir los QR (Ajustes → Imprimir QRs): el de entrada en carteles, cada
+   checkpoint en su lugar. Bajo cada QR va el código en texto.
+4. Probar con un teléfono **con datos móviles**: entrar, foto, QR, AR.
+5. El día: **Abrir evento**; moderadores con sesión iniciada (Moderar funciona
+   bien desde el teléfono); ranking en la pantalla grande (Ranking → Pantalla grande).
+6. Al terminar: **Cerrar evento** (congela el ranking; la galería sigue visible).
+
+## 11. Comandos útiles
+
+| Para | Comando (en `~/rnr-quest`) |
 |---|---|
-| Actualizar | `git pull && docker compose up -d --build` (la base se migra sola) |
+| Actualizar a la última versión | `git pull && docker compose up -d --build` (la base se migra sola) |
 | Ver logs | `docker compose logs -f app` (o `cloudflared`) |
 | Reiniciar | `docker compose restart app` |
+| Aplicar cambios de `server/.env` | `docker compose up -d` (`restart` **no** relee el archivo) |
 | Contraseña del panel | `docker compose exec app npm run create-admin -- --username victor` |
 | Evento de prueba | `docker compose exec app npm run seed-demo` |
-| Parar todo | `docker compose --profile tunnel down` (los datos quedan) |
+| Espacio en disco | `df -h` (y panel → Resumen: MB de fotos) |
+| Parar todo | `docker compose down` (los datos quedan) |
 
 `docker compose down -v` **borra el volumen con la base y las fotos**: no usarlo.
 
-## 7. Problemas comunes
+**Cambiar de dominio:** editar `APP_DOMAIN` en `server/.env`, cambiar el
+*Public Hostname* del túnel en Cloudflare, `docker compose up -d` y **reimprimir
+los QR**.
+
+## 12. Problemas comunes
 
 | Síntoma | Revisar |
 |---|---|
-| `app` se reinicia en bucle | `docker compose logs app`. Si dice "APP_SECRET debe tener al menos 32 caracteres", complétalo en `server/.env`. |
+| `permission denied ... docker.sock` | Falta cerrar sesión tras `usermod -aG docker` (paso 2). |
+| `env file ... server/.env not found` | Falta `cp server/.env.example server/.env` (paso 4). |
+| `app` se reinicia en bucle | `docker compose logs app`. Si dice "APP_SECRET debe tener al menos 32 caracteres", completarlo en `server/.env` y `docker compose up -d`. |
+| `cloudflared` se reinicia en bucle | `docker compose logs cloudflared`: falta o está mal el `TUNNEL_TOKEN`. |
+| Error 1033 / 502 en el dominio | El túnel no llega a la app: `docker compose ps`; en Cloudflare la URL del *Public Hostname* debe ser `app:8787`. |
+| `405` al iniciar sesión | El dominio todavía apunta a Cloudflare Pages: paso 5.1. |
 | `EACCES` en `/data` o `/backups` | La carpeta del host no es del uid 1000: `sudo chown -R 1000:1000 <carpeta>`. |
-| Error 1033 / 502 en el dominio | `docker compose logs cloudflared`; en el panel del túnel la URL debe ser `app:8787`. |
-| Los QR muestran `localhost` | Falta `APP_DOMAIN` en `server/.env`, luego `docker compose up -d`. |
-| Cambié `server/.env` y no se nota | `docker compose up -d` (recrea el contenedor; `restart` no relee el archivo). |
+| La cámara no abre en el teléfono | Se está usando `http://` (IP local): usar `https://rnr.penginexr.com`. |
+| Los QR muestran `localhost` o la IP | Falta `APP_DOMAIN` en `server/.env` (el panel lo avisa en Ajustes). |

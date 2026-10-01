@@ -1,7 +1,7 @@
 // Copia de seguridad: una instantanea consistente de la base (VACUUM INTO,
 // funciona con el servidor andando) y una copia incremental de las fotos.
 //   npm run backup -- /media/usb/rnr-quest-backup
-// Pensado para cron (ver docs/deploy-pi.md).
+// Pensado para cron (ver docs/docker.md).
 import { cp, mkdir, readdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
