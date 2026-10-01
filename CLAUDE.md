@@ -14,6 +14,10 @@ guarda lo que no se deduce leyendo el código.
 - Instalación en servidor: `deploy/setup.sh` + `deploy/cloudflare-tunnel.sh` (sin probar aún en una
   Pi real; solo validados con `bash -n` y simulando la edición del .env). Por defecto todo en la Pi
   (la API sirve `dist/` con `STATIC_DIR`); Cloudflare Pages es opcional.
+- Alternativa con Docker (`Dockerfile` + `docker-compose.yml`, guía `docs/docker.md`): una imagen
+  con página + API, datos en `/data`, usuario `node` (uid 1000), túnel como contenedor
+  `cloudflared` con token (perfil `tunnel`). Compose fija HOST/DATA_DIR/STATIC_DIR y pisa
+  `server/.env`. Sin probar aún: el PC del usuario no tiene Docker.
 - Fotos **no públicas**: solo participantes del evento y organizadores.
 - El usuario escribe en español y prefiere: revisar diseño antes de cambios grandes, no
   reescribir, explicaciones claras. Commits en `main` (historial en español).

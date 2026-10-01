@@ -1,0 +1,14 @@
+# Solo entra a la imagen lo que copia el Dockerfile; esto acelera el build
+# y evita que se cuelen secretos o datos locales.
+.git
+**/node_modules
+dist
+server/data
+backups
+**/.env
+**/*.log
+.claude
+.vscode
+.idea
+docs
+deploy

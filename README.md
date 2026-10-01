@@ -66,6 +66,20 @@ Cloudflare Pages, solución de problemas y checklist del día del evento:
 `./deploy/cloudflare-tunnel.sh` y `sudo systemctl restart rnr-quest`. Hay que
 reimprimir los QR.
 
+### Con Docker
+
+En lugar de `setup.sh`, la app y el túnel de Cloudflare pueden correr en
+contenedores (Pi o cualquier PC):
+
+```bash
+cp server/.env.example server/.env     # APP_DOMAIN, APP_SECRET y TUNNEL_TOKEN
+mkdir -p backups
+docker compose --profile tunnel up -d --build
+docker compose exec app npm run create-admin -- --username admin
+```
+
+Guía completa (datos en SSD, backups, actualizar): **[docs/docker.md](docs/docker.md)**.
+
 ### En tu computadora (desarrollo)
 
 Requiere Node.js ≥ 22.13.

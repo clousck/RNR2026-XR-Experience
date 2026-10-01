@@ -1,0 +1,63 @@
+# RNR Quest con Docker (guia: docs/docker.md)
+#
+#   cp server/.env.example server/.env    # APP_DOMAIN, APP_SECRET (y TUNNEL_TOKEN)
+#   docker compose up -d --build                     # solo la app
+#   docker compose --profile tunnel up -d --build    # app + Cloudflare Tunnel
+#
+# Opcional, como variables al lanzar (o en el .env de la raiz):
+#   RNR_DATA_DIR=/mnt/ssd/rnr-quest   datos en una carpeta del host (SSD) en vez del volumen
+#   RNR_BACKUP_DIR=/media/usb/backup  destino de `npm run backup` (por defecto ./backups)
+#   VITE_API_URL=...                  solo si la pagina va en Cloudflare Pages
+
+# Nombre fijo: el volumen se llama rnr-quest_rnr-data sin importar la carpeta
+name: rnr-quest
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+    image: rnr-quest:latest
+    restart: unless-stopped
+    # APP_DOMAIN, APP_SECRET, CORS_ORIGINS, MAX_PHOTO_MB...
+    env_file: server/.env
+    # Fijos dentro del contenedor: pisan lo que diga server/.env (que puede
+    # venir de la instalacion sin Docker, con rutas del host).
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8787
+      DATA_DIR: /data
+      STATIC_DIR: /app/dist
+    # Solo en localhost: a internet se llega por el tunel (el contenedor
+    # cloudflared, o cloudflared instalado en el host apuntando a 127.0.0.1:8787).
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ${RNR_DATA_DIR:-rnr-data}:/data
+      - ${RNR_BACKUP_DIR:-./backups}:/backups
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+
+  # Cloudflare Tunnel con token (se crea en el panel de Cloudflare, ver
+  # docs/docker.md). Solo arranca con --profile tunnel.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    # Lee TUNNEL_TOKEN de server/.env (toda la config del servidor en un lugar)
+    env_file: server/.env
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+
+volumes:
+  rnr-data:
