@@ -139,6 +139,19 @@ const MIGRATIONS = [
     sort_order   INTEGER NOT NULL DEFAULT 0
   );
   `,
+  // Aprobacion fija por tipo: los checkpoints QR se aprueban solos (se
+  // aprueban sus envios pendientes) y las fotos y el AR siempre pasan por un
+  // moderador (lo ya aprobado se respeta).
+  `
+  UPDATE challenges SET requires_approval = 0 WHERE type = 'QR';
+  UPDATE challenges SET requires_approval = 1 WHERE type IN ('PHOTO', 'AR');
+  UPDATE submissions
+     SET status = 'approved',
+         points_awarded = (SELECT points FROM challenges c WHERE c.id = submissions.challenge_id),
+         reviewed_at = created_at
+   WHERE status = 'pending'
+     AND challenge_id IN (SELECT id FROM challenges WHERE type = 'QR');
+  `,
 ]
 
 function migrate(db) {

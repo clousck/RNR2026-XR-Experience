@@ -480,10 +480,20 @@ export function adminRoutes(svc) {
     updatedAt: ['updated_at'],
   }
 
-  /** Reglas por tipo: las fotos son obligatorias en PHOTO/AR; un QR no lleva foto. */
+  /**
+   * Reglas por tipo. PHOTO/AR llevan foto y siempre pasan por un moderador
+   * (es lo que impide sumar puntos con cualquier imagen). Un QR no lleva
+   * foto y se aprueba solo: escanearlo ya es la prueba.
+   */
   function applyTypeRules(data, type) {
-    if (type === 'PHOTO' || type === 'AR') data.requiresPhoto = true
-    if (type === 'QR') data.requiresPhoto = false
+    if (type === 'PHOTO' || type === 'AR') {
+      data.requiresPhoto = true
+      data.requiresApproval = true
+    }
+    if (type === 'QR') {
+      data.requiresPhoto = false
+      data.requiresApproval = false
+    }
     if (data.availableFrom && data.availableUntil && data.availableFrom > data.availableUntil) {
       throw badRequest('«Disponible hasta» debe ser posterior a «disponible desde».')
     }

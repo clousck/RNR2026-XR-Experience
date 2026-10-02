@@ -22,7 +22,7 @@ const TEAMS = ['Rama ESPOL', 'Rama EPN', 'Rama UCuenca', 'Rama ESPE', 'Rama PUCE
 
 const CHALLENGES = [
   { type: 'PHOTO', icon: '🤝', title: 'Conoce una nueva Rama', description: 'Encuentra a alguien de una Rama diferente a la tuya y tómense una foto juntos.', points: 20, category: 'Networking', difficulty: 'easy' },
-  { type: 'AR', icon: '🐱', title: 'Encuentra a Watt', description: 'Abre la cámara, coloca a Watt y tómate una foto con él.', points: 15, category: 'Watt', difficulty: 'easy', requiresApproval: false },
+  { type: 'AR', icon: '🐱', title: 'Encuentra a Watt', description: 'Abre la cámara, coloca a Watt y tómate una foto con él.', points: 15, category: 'Watt', difficulty: 'easy' },
   { type: 'QR', icon: '📍', title: 'Checkpoint: Registro', description: 'Busca el código QR en la mesa de registro y escanéalo.', points: 10, category: 'Exploración', difficulty: 'easy', requiresApproval: false },
   { type: 'PHOTO', icon: '🎤', title: 'Selfie con un ponente', description: 'Tómate una foto con alguno de los ponentes del evento.', points: 30, category: 'Networking', difficulty: 'medium' },
   { type: 'PHOTO', icon: '🧑‍🤝‍🧑', title: 'Foto grupal de tu Rama', description: 'Reúne al menos a 5 personas de tu Rama para una foto.', points: 25, category: 'Equipo', difficulty: 'medium', maxCompletions: 40 },

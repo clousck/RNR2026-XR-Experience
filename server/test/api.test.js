@@ -94,13 +94,19 @@ describe('flujo completo', () => {
 
     const mk = async (body) => (await call('POST', `/admin/events/${eventId}/challenges`, { token: admin, body: { status: 'active', ...body } })).data.challenge
     photoCh = await mk({ type: 'PHOTO', title: 'Conoce una nueva Rama', points: 20, category: 'Networking', requiresApproval: true })
+    // Aunque no se pida revision, una foto o un AR siempre pasan por un moderador
     arCh = await mk({ type: 'AR', title: 'Encuentra a Watt', points: 15, requiresApproval: false })
-    qrCh = await mk({ type: 'QR', title: 'Checkpoint', points: 10, requiresApproval: false })
-    secretQr = await mk({ type: 'QR', title: 'Secreto', points: 40, visibility: 'secret', requiresApproval: false })
+    qrCh = await mk({ type: 'QR', title: 'Checkpoint', points: 10 })
+    // Aunque se pida revision, un QR se aprueba solo
+    secretQr = await mk({ type: 'QR', title: 'Secreto', points: 40, visibility: 'secret', requiresApproval: true })
     lockedCh = await mk({ type: 'PHOTO', title: 'Nivel 2', points: 5, unlockRule: { afterChallenges: [photoCh.id] } })
     limitedCh = await mk({ type: 'PHOTO', title: 'Solo uno', points: 5, maxCompletions: 1, requiresApproval: false })
     assert.equal(photoCh.requiresPhoto, true)
     assert.equal(qrCh.requiresPhoto, false)
+    assert.equal(arCh.requiresApproval, true)
+    assert.equal(limitedCh.requiresApproval, true)
+    assert.equal(qrCh.requiresApproval, false)
+    assert.equal(secretQr.requiresApproval, false)
     assert.match(qrCh.qrCode, /^[A-Z2-9]{6}$/)
   })
 
@@ -218,15 +224,19 @@ describe('flujo completo', () => {
     assert.equal(tampered.status, 403)
   })
 
-  test('AR sin aprobación suma XP al instante', async () => {
+  test('AR: queda pendiente y suma XP al aprobarse', async () => {
     const res = await call('POST', `/events/taller-de-directivos-2027/challenges/${arCh.id}/submissions`, {
       token: ana,
       form: photoForm('client-ar-0001', { capturedWith: 'ar' }),
     })
     assert.equal(res.status, 201)
-    assert.equal(res.data.submission.status, 'approved')
-    assert.equal(res.data.me.xp, 35)
-    assert.equal(res.data.me.badges.find((b) => b.name === 'Amigo de Watt').earned, true)
+    assert.equal(res.data.submission.status, 'pending')
+    assert.equal(res.data.me.xp, 20)
+
+    await call('POST', `/admin/submissions/${res.data.submission.id}/review`, { token: mod, body: { decision: 'approve' } })
+    const { data } = await call('GET', '/events/taller-de-directivos-2027/me', { token: ana })
+    assert.equal(data.me.xp, 35)
+    assert.equal(data.me.badges.find((b) => b.name === 'Amigo de Watt').earned, true)
   })
 
   test('QR: reclamar, repetir y revelar un secreto', async () => {
@@ -316,7 +326,7 @@ describe('flujo completo', () => {
     assert.ok(stats.data.byChallenge.length >= 6)
 
     const exp = await call('POST', `/admin/events/${eventId}/export`, { token: mod, body: { status: 'approved' } })
-    assert.equal(exp.data.count, 2, 'la de Ana y el reintento de Beto (auto-aprobado)')
+    assert.equal(exp.data.count, 1, 'la de Ana (el reintento de Beto sigue pendiente)')
     const zip = await call('GET', `/${exp.data.url}`)
     assert.equal(zip.status, 200)
     assert.equal(zip.res.headers.get('content-type'), 'application/zip')

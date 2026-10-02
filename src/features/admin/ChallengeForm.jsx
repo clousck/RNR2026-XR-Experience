@@ -26,7 +26,6 @@ const EMPTY = {
   difficulty: 'easy',
   status: 'active',
   visibility: 'visible',
-  requiresApproval: true,
   availableFrom: '',
   availableUntil: '',
   maxCompletions: '',
@@ -53,7 +52,6 @@ function toForm(c) {
     difficulty: c.difficulty,
     status: c.status,
     visibility: c.visibility,
-    requiresApproval: c.requiresApproval,
     availableFrom: toLocalInput(c.availableFrom),
     availableUntil: toLocalInput(c.availableUntil),
     maxCompletions: c.maxCompletions ?? '',
@@ -73,7 +71,6 @@ function toBody(f) {
     difficulty: f.difficulty,
     status: f.status,
     visibility: f.visibility,
-    requiresApproval: f.requiresApproval,
     availableFrom: fromLocalInput(f.availableFrom),
     availableUntil: fromLocalInput(f.availableUntil),
     maxCompletions: f.maxCompletions === '' ? null : Number(f.maxCompletions),
@@ -259,18 +256,11 @@ export default function ChallengeForm() {
             </p>
           )}
 
-          {form.type !== 'QR' && (
-            <label className="check">
-              <input type="checkbox" checked={form.requiresApproval} onChange={set('requiresApproval')} />
-              <span>Requiere aprobación de un moderador (recomendado para fotos)</span>
-            </label>
-          )}
-          {form.type === 'QR' && (
-            <label className="check">
-              <input type="checkbox" checked={form.requiresApproval} onChange={set('requiresApproval')} />
-              <span>Requiere confirmación de un moderador (normalmente no: el QR ya es la prueba)</span>
-            </label>
-          )}
+          <p className="muted small">
+            {form.type === 'QR'
+              ? '⚡ Se aprueba automáticamente al escanear el QR: no pasa por moderación.'
+              : '👀 Un moderador revisa cada foto antes de sumar los puntos.'}
+          </p>
 
           <details open={!!(form.availableFrom || form.availableUntil || form.maxCompletions)}>
             <summary>Horario y cupo</summary>
