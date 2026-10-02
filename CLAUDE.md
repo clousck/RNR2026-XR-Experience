@@ -9,7 +9,7 @@ guarda lo que no se deduce leyendo el código.
 - Se usará en **2027** en dos eventos: **Taller de Directivos** y **RNR** (multi-evento real).
 - ~100–150 participantes. Moderan el usuario y el **SAC team (~10 personas)**.
 - Servidor: **Raspberry Pi 5, 8 GB, 32 GB** (probablemente microSD → recomendar SSD), detrás de
-  **Cloudflare Tunnel**. Dominio (por ahora): **rnr.penginexr.com**. Va en un solo lugar,
+  **Cloudflare Tunnel**. Dominio (por ahora): **ieeequest.penginexr.com**. Va en un solo lugar,
   `server/.env` → `APP_DOMAIN` (QR y CORS salen de ahí). No hay API keys externas.
 - Despliegue **solo con Docker** (desde 2026-10-01; se quitaron `deploy/` con systemd y Cloudflare
   Pages): `Dockerfile` (página + API en una imagen, datos en `/data`, usuario `node` uid 1000) y

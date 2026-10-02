@@ -1,6 +1,6 @@
 // Prueba de carga: simula N participantes entrando a la vez, subiendo fotos
 // a los retos de foto y consultando retos, ranking y galeria.
-//   npm run loadtest -- --url https://rnr.penginexr.com/api --slug demo --code ABC123 --users 150
+//   npm run loadtest -- --url https://ieeequest.penginexr.com/api --slug demo --code ABC123 --users 150
 // Usar contra un evento de prueba (crea participantes "carga-N"), p. ej. el
 // de `npm run seed-demo`. Correrlo desde otra maquina mide tambien la red.
 import { parseArgs } from 'node:util'

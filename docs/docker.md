@@ -1,12 +1,12 @@
 # Despliegue en la Raspberry Pi (Docker)
 
 Guía paso a paso, desde una Pi recién instalada hasta RNR Quest funcionando en
-**https://rnr.penginexr.com**. Sirve igual en cualquier PC/servidor Linux de
+**https://ieeequest.penginexr.com**. Sirve igual en cualquier PC/servidor Linux de
 64 bits. Pensada para una Raspberry Pi 5 (8 GB) y eventos de ~150 personas.
 
 ```
 Teléfonos ──HTTPS──▶ Cloudflare ──túnel──▶ contenedor cloudflared
- rnr.penginexr.com                            └─▶ contenedor app (app:8787)
+ ieeequest.penginexr.com                      └─▶ contenedor app (app:8787)
                                                    ├─ página (dist/) y API (/api)
                                                    └─ /data → quest.db + files/
 ```
@@ -105,7 +105,7 @@ nano server/.env
 En `nano`:
 
 - `APP_SECRET=` → pegar el valor generado.
-- `APP_DOMAIN=rnr.penginexr.com` ya viene puesto.
+- `APP_DOMAIN=ieeequest.penginexr.com` ya viene puesto.
 - `TUNNEL_TOKEN=` → se completa en el paso 5.
 
 Guardar con `Ctrl+O`, `Enter`, y salir con `Ctrl+X`.
@@ -132,19 +132,19 @@ mkdir -p backups
 
 ## 5. Crear el túnel de Cloudflare
 
-El túnel publica la Pi en `rnr.penginexr.com` sin abrir puertos en el router ni
+El túnel publica la Pi en `ieeequest.penginexr.com` sin abrir puertos en el router ni
 tener IP fija: la Pi se conecta hacia Cloudflare.
 
-1. **Si `rnr.penginexr.com` estaba en Cloudflare Pages**: Workers & Pages → el
-   proyecto → *Custom domains* → quitar `rnr.penginexr.com` (o borrar el
-   proyecto). Luego, en *DNS* de `penginexr.com`, borrar el registro `rnr` si
+1. **Si `ieeequest.penginexr.com` estaba en Cloudflare Pages**: Workers & Pages → el
+   proyecto → *Custom domains* → quitar `ieeequest.penginexr.com` (o borrar el
+   proyecto). Luego, en *DNS* de `penginexr.com`, borrar el registro `ieeequest` si
    quedó. Si no, el túnel no puede usar ese nombre (y Pages seguiría
    respondiendo `405` al iniciar sesión).
 2. Cloudflare → *Zero Trust* → *Networks* → *Tunnels* → *Create a tunnel* →
    *Cloudflared*, nombre `rnr-quest`.
 3. Copiar el **token**: el texto largo después de `--token` en los comandos que
    muestra. No hace falta instalar nada de lo que sugiere esa página.
-4. *Public Hostname* → *Add*: subdominio `rnr`, dominio `penginexr.com`, tipo
+4. *Public Hostname* → *Add*: subdominio `ieeequest`, dominio `penginexr.com`, tipo
    **HTTP**, URL **`app:8787`**. Cloudflare crea el registro DNS solo.
 5. En la Pi: `nano server/.env` → `TUNNEL_TOKEN=<token>`.
 
@@ -154,7 +154,7 @@ tener IP fija: la Pi se conecta hacia Cloudflare.
 docker compose up -d --build           # la primera vez tarda varios minutos
 docker compose ps                      # app (healthy) y cloudflared en marcha
 curl http://127.0.0.1:8787/api/health  # {"ok":true,...}
-curl https://rnr.penginexr.com/api/health
+curl https://ieeequest.penginexr.com/api/health
 ```
 
 Crear el primer usuario del panel (pide la contraseña):
@@ -163,7 +163,7 @@ Crear el primer usuario del panel (pide la contraseña):
 docker compose exec app npm run create-admin -- --username victor --name "Victor" --role admin
 ```
 
-Abrir **https://rnr.penginexr.com/admin**, crear el evento y los retos. Los
+Abrir **https://ieeequest.penginexr.com/admin**, crear el evento y los retos. Los
 demás usuarios (SAC team) se crean desde el panel → **Usuarios**: *moderador*
 (revisa fotos, gestiona participantes, descarga) o *admin* (además edita retos
 y ajustes).
@@ -184,7 +184,7 @@ línea `RNR_BIND` de `.env` y `docker compose up -d`.
 (También existe `docker compose --profile quick up -d`: un túnel temporal
 `https://<algo>.trycloudflare.com` sin cuenta, que aparece en
 `docker compose logs cloudflared-quick`. Con `APP_DOMAIN` puesto, los QR siguen
-apuntando a `rnr.penginexr.com`.)
+apuntando a `ieeequest.penginexr.com`.)
 
 ## 8. Backups automáticos
 
@@ -224,7 +224,7 @@ cd ~/rnr-quest && docker compose ps    # todo "Up", app (healthy)
 1. Prueba de carga desde **otra** red (mide la Pi y el túnel juntos), desde una
    computadora con el repo y Node, contra un evento de prueba
    (`docker compose exec app npm run seed-demo` crea uno e imprime el código):
-   `cd server && npm run loadtest -- --url https://rnr.penginexr.com/api --code <código>`
+   `cd server && npm run loadtest -- --url https://ieeequest.penginexr.com/api --code <código>`
 2. Crear el evento (o **duplicar** el del Taller), cargar Ramas y retos, revisar
    niveles y logros.
 3. Imprimir los QR (Ajustes → Imprimir QRs): el de entrada en carteles, cada
@@ -264,5 +264,5 @@ los QR**.
 | Error 1033 / 502 en el dominio | El túnel no llega a la app: `docker compose ps`; en Cloudflare la URL del *Public Hostname* debe ser `app:8787`. |
 | `405` al iniciar sesión | El dominio todavía apunta a Cloudflare Pages: paso 5.1. |
 | `EACCES` en `/data` o `/backups` | La carpeta del host no es del uid 1000: `sudo chown -R 1000:1000 <carpeta>`. |
-| La cámara no abre en el teléfono | Se está usando `http://` (IP local): usar `https://rnr.penginexr.com`. |
+| La cámara no abre en el teléfono | Se está usando `http://` (IP local): usar `https://ieeequest.penginexr.com`. |
 | Los QR muestran `localhost` o la IP | Falta `APP_DOMAIN` en `server/.env` (el panel lo avisa en Ajustes). |

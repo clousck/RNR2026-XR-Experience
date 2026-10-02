@@ -24,7 +24,7 @@ teléfono, sin instalar nada:
 | | |
 |---|---|
 | **Servidor** | Raspberry Pi 5 (u otro Linux de 64 bits) con **Docker**. Idealmente un SSD por USB para los datos. |
-| **Dominio** | `rnr.penginexr.com`, gestionado en Cloudflare (plan gratuito). |
+| **Dominio** | `ieeequest.penginexr.com`, gestionado en Cloudflare (plan gratuito). |
 | **API keys** | **Ninguna.** El proyecto no usa servicios externos. Los únicos secretos son `APP_SECRET`, el token del túnel de Cloudflare y las contraseñas del panel. |
 
 ### Dónde va cada configuración
@@ -54,7 +54,7 @@ docker compose --profile tunnel up -d --build
 docker compose exec app npm run create-admin -- --username admin
 ```
 
-Luego: `https://rnr.penginexr.com/admin`. Actualizar: `git pull && docker compose up -d --build`.
+Luego: `https://ieeequest.penginexr.com/admin`. Actualizar: `git pull && docker compose up -d --build`.
 
 Guía paso a paso desde una Pi recién instalada (Docker, SSD, túnel, backups,
 checklist del evento, problemas comunes): **[docs/docker.md](docs/docker.md)**.
