@@ -84,9 +84,12 @@ export default function Dashboard() {
               <tr>
                 <th className="num">#</th>
                 <th>{event.settings.teamLabel}</th>
-                <th className="num">Personas</th>
-                <th className="num">Retos</th>
-                <th className="num">XP</th>
+                <th className="num">Inscritos</th>
+                <th className="num">Activos</th>
+                <th className="num">Desempeño</th>
+                <th className="num">Participación</th>
+                <th className="num">Colectivo</th>
+                <th className="num">Puntos</th>
               </tr>
             </thead>
             <tbody>
@@ -95,8 +98,13 @@ export default function Dashboard() {
                   <td className="num">{team.rank}</td>
                   <td>{team.name}</td>
                   <td className="num">{fmt(team.members)}</td>
-                  <td className="num">{fmt(team.completed)}</td>
-                  <td className="num">{fmt(team.xp)}</td>
+                  <td className="num">{fmt(team.active)}</td>
+                  <td className="num">{fmt(team.performance)}</td>
+                  <td className="num">{fmt(team.participation)}</td>
+                  <td className="num">{fmt(team.collective)}</td>
+                  <td className="num">
+                    <strong>{fmt(team.score)}</strong>
+                  </td>
                 </tr>
               ))}
             </tbody>

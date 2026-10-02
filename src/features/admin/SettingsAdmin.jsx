@@ -3,16 +3,20 @@ import { Link, useNavigate } from 'react-router'
 import {
   addTeams,
   createBadge,
+  createTeamGoal,
   deleteBadge,
   deleteEvent,
   deleteTeam,
+  deleteTeamGoal,
   duplicateEvent,
   listBadges,
   listChallenges,
+  listTeamGoals,
   listTeams,
   updateBadge,
   updateEvent,
   updateTeam,
+  updateTeamGoal,
 } from '../../api/admin'
 import { useAsync } from '../../shared/useAsync'
 import { ErrorBox } from '../quest/ui'
@@ -28,6 +32,8 @@ export default function SettingsAdmin() {
       <AccessCard />
       <EventCard />
       <TeamsCard />
+      <TeamScoreCard />
+      <TeamGoalsCard />
       <LevelsCard />
       <BadgesCard />
       {isAdmin && <DuplicateCard />}
@@ -280,6 +286,234 @@ function TeamsCard() {
       )}
       <ErrorBox error={error || actionError} />
     </div>
+  )
+}
+
+/** Valores del puntaje por equipo: se ajustan por evento sin tocar codigo. */
+function TeamScoreCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const { save, error, saved } = useSaver()
+  const label = event.settings.teamLabel
+  const [f, setF] = useState(() => {
+    const ts = event.settings.teamScore
+    return {
+      performance: ts.performance,
+      participation: ts.participation,
+      collective: ts.collective,
+      participationRef: ts.participationRef,
+      top: ts.top.map((w) => Math.round(w * 100)).join(', '),
+    }
+  })
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
+  const total = Number(f.performance) + Number(f.participation) + Number(f.collective)
+
+  const submit = (e) => {
+    e.preventDefault()
+    const { teamLabel, accent, likes } = event.settings
+    save({
+      settings: {
+        teamLabel,
+        accent,
+        likes,
+        teamScore: {
+          performance: Number(f.performance),
+          participation: Number(f.participation),
+          collective: Number(f.collective),
+          participationRef: Number(f.participationRef),
+          top: f.top
+            .split(',')
+            .map((w) => Number(w) / 100)
+            .filter((w) => w > 0),
+        },
+      },
+    })
+  }
+
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h3>Puntaje por {label}</h3>
+      <p className="muted small">
+        Cada {label} puede llegar a <strong>{total || 0} puntos</strong>. No cambia el XP de las personas: solo decide cómo se compara una{' '}
+        {label} con otra. Los inscritos que no participan no suman.
+      </p>
+      <fieldset disabled={!isAdmin}>
+        <div className="form-grid">
+          <label>
+            Desempeño (puntos)
+            <input type="number" min="0" value={f.performance} onChange={set('performance')} required />
+          </label>
+          <label>
+            Aporte de los mejores (%)
+            <input value={f.top} onChange={set('top')} placeholder="100, 60, 40, 25, 15" required />
+          </label>
+          <label>
+            Participación (puntos)
+            <input type="number" min="0" value={f.participation} onChange={set('participation')} required />
+          </label>
+          <label>
+            Activos para el máximo
+            <input type="number" min="1" value={f.participationRef} onChange={set('participationRef')} required />
+          </label>
+          <label>
+            Retos de {label} (puntos)
+            <input type="number" min="0" value={f.collective} onChange={set('collective')} required />
+          </label>
+        </div>
+      </fieldset>
+      <p className="muted small">
+        <strong>Desempeño:</strong> el XP del mejor integrante cuenta completo y el de los siguientes, el porcentaje indicado; el máximo es que
+        todos ellos tengan todo el XP de los retos publicados. <strong>Participación:</strong> crece con cada integrante que tiene al menos un
+        reto aprobado con puntos, cada vez un poco menos, hasta el máximo. <strong>Retos de {label}:</strong> ver abajo.
+      </p>
+      <ErrorBox error={error} />
+      {isAdmin && (
+        <div className="row">
+          <button className="btn primary">Guardar puntaje</button>
+          {saved && <span className="saved">✓ Guardado</span>}
+        </div>
+      )}
+    </form>
+  )
+}
+
+const MAX_GOAL_MEMBERS = 5
+
+/** Retos de equipo: dan puntos al equipo (no XP) cuando N integrantes completan un reto. */
+function TeamGoalsCard() {
+  const { event } = useEventAdmin()
+  const { isAdmin } = useAdmin()
+  const label = event.settings.teamLabel
+  const goals = useAsync(() => listTeamGoals(event.id), [event.id])
+  const challenges = useAsync(() => listChallenges(event.id), [event.id])
+  const [editing, setEditing] = useState(null) // id o 'new'
+  const [error, setError] = useState(null)
+  const chList = challenges.data?.challenges ?? []
+  const list = goals.data?.goals ?? []
+  const totalPoints = list.reduce((sum, g) => sum + g.points, 0)
+  const collective = event.settings.teamScore.collective
+
+  const saveGoal = async (body) => {
+    setError(null)
+    try {
+      const res = editing === 'new' ? await createTeamGoal(event.id, body) : await updateTeamGoal(editing, body)
+      goals.setData(res)
+      setEditing(null)
+    } catch (e) {
+      setError(e)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>Retos de {label}</h3>
+      <p className="muted small">
+        Se cumplen una sola vez, cuando varios integrantes distintos de la {label} completan un reto. Reparten los {collective} puntos
+        colectivos según su valor. Para una foto grupal, crea un reto de foto de 0 XP y pide 1 integrante.
+      </p>
+      <ul className="team-list">
+        {list.map((g) =>
+          editing === g.id ? (
+            <li key={g.id}>
+              <TeamGoalForm goal={g} challenges={chList} onSave={saveGoal} onCancel={() => setEditing(null)} />
+            </li>
+          ) : (
+            <li key={g.id}>
+              <span>
+                {g.icon} <strong>{g.name}</strong> · {Math.round((collective * g.points) / totalPoints)} pts
+                <br />
+                <small className="muted">
+                  {g.members} o más integrantes completan «{chList.find((c) => c.id === g.challengeId)?.title ?? '¿?'}»
+                </small>
+              </span>
+              {isAdmin && (
+                <span className="row">
+                  <button className="btn small" onClick={() => setEditing(g.id)}>
+                    Editar
+                  </button>
+                  <button
+                    className="btn small"
+                    onClick={async () => window.confirm(`¿Borrar «${g.name}»?`) && goals.setData(await deleteTeamGoal(g.id))}
+                  >
+                    Borrar
+                  </button>
+                </span>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+      {!list.length && <p className="muted small">Todavía no hay retos de {label}: nadie suma puntos colectivos.</p>}
+      {editing === 'new' && <TeamGoalForm challenges={chList} onSave={saveGoal} onCancel={() => setEditing(null)} />}
+      {isAdmin && editing !== 'new' && chList.length > 0 && (
+        <button className="btn" onClick={() => setEditing('new')}>
+          + Nuevo reto de {label}
+        </button>
+      )}
+      <ErrorBox error={error || goals.error} />
+    </div>
+  )
+}
+
+function TeamGoalForm({ goal, challenges, onSave, onCancel }) {
+  const [f, setF] = useState(() => ({
+    name: goal?.name ?? '',
+    icon: goal?.icon ?? '🤝',
+    description: goal?.description ?? '',
+    points: goal?.points ?? 10,
+    members: goal?.members ?? 3,
+    challengeId: goal?.challengeId ?? challenges[0]?.id ?? '',
+  }))
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
+
+  const submit = (e) => {
+    e.preventDefault()
+    onSave({ ...f, points: Number(f.points), members: Number(f.members), challengeId: Number(f.challengeId) })
+  }
+
+  return (
+    <form className="form badge-form" onSubmit={submit}>
+      <div className="form-grid">
+        <label>
+          Icono
+          <input value={f.icon} onChange={set('icon')} maxLength={16} required />
+        </label>
+        <label>
+          Nombre
+          <input value={f.name} onChange={set('name')} maxLength={60} required minLength={2} placeholder="Cinco con Watt" />
+        </label>
+      </div>
+      <label>
+        Descripción
+        <input value={f.description} onChange={set('description')} maxLength={200} />
+      </label>
+      <div className="form-grid">
+        <label>
+          Reto a completar
+          <select value={f.challengeId} onChange={set('challengeId')}>
+            {challenges.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Integrantes (máx. {MAX_GOAL_MEMBERS})
+          <input type="number" min="1" max={MAX_GOAL_MEMBERS} value={f.members} onChange={set('members')} required />
+        </label>
+        <label>
+          Valor (frente a los demás)
+          <input type="number" min="1" max="1000" value={f.points} onChange={set('points')} required />
+        </label>
+      </div>
+      <div className="row">
+        <button className="btn primary">Guardar</button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    </form>
   )
 }
 

@@ -8,7 +8,9 @@ teléfono, sin instalar nada:
 - **Retos**: 📷 foto, 🐱 AR con Watt (el booth de abajo) y 📍 checkpoints QR.
   Cada reto tiene puntos, categoría, dificultad, horario, cupo, desbloqueo por
   otros retos o XP, modo secreto y aprobación manual opcional.
-- **Gamificación liviana**: XP, niveles, logros, ranking individual y por Rama.
+- **Gamificación liviana**: XP, niveles, logros y ranking individual. El ranking
+  por Rama usa un puntaje propio (hasta 300): desempeño de sus 5 mejores,
+  cuántos participan y retos de Rama; los inscritos que no juegan no suman.
 - **Galería privada** del evento (solo fotos aprobadas, solo participantes),
   con filtros por reto y Rama y likes.
 - **Panel** (`/admin`): crear y editar retos sin tocar código, moderar fotos

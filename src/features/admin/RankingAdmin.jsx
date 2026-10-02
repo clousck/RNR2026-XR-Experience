@@ -8,7 +8,10 @@ import QrImage, { eventJoinUrl } from './QrImage'
 
 const MEDAL = ['🥇', '🥈', '🥉']
 
-function RankList({ rows, name, sub }) {
+const teamSub = (t) => `${t.active} de ${t.members} activos · Desempeño ${t.performance} · Participación ${t.participation} · Colectivo ${t.collective}`
+const teamScore = (t) => `${t.score} pts`
+
+function RankList({ rows, name, sub, score = (r) => `${r.xp} XP` }) {
   return (
     <ol className="ranking">
       {rows.map((r) => (
@@ -18,7 +21,7 @@ function RankList({ rows, name, sub }) {
             {name(r)}
             {sub && <small>{sub(r)}</small>}
           </span>
-          <span className="score">{r.xp} XP</span>
+          <span className="score">{score(r)}</span>
         </li>
       ))}
     </ol>
@@ -51,7 +54,7 @@ export default function RankingAdmin() {
           </div>
           <div>
             <h3>Por {event.settings.teamLabel}</h3>
-            <RankList rows={data.teams} name={(t) => t.name} sub={(t) => `${t.members} personas · ${t.completed} retos`} />
+            <RankList rows={data.teams} name={(t) => t.name} sub={teamSub} score={teamScore} />
           </div>
         </div>
       )}
@@ -92,7 +95,7 @@ export function BigScreen() {
           </div>
           <div>
             <h2>🏛️ {event.settings.teamLabel}s</h2>
-            <RankList rows={data.teams.filter((t) => t.members > 0).slice(0, 10)} name={(t) => t.name} />
+            <RankList rows={data.teams.filter((t) => t.members > 0).slice(0, 10)} name={(t) => t.name} sub={teamSub} score={teamScore} />
           </div>
         </div>
       )}

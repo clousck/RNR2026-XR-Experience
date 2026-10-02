@@ -62,6 +62,11 @@ export const createBadge = (eventId, body) => post(`/events/${eventId}/badges`, 
 export const updateBadge = (id, body) => patch(`/badges/${id}`, body)
 export const deleteBadge = (id) => del(`/badges/${id}`)
 
+export const listTeamGoals = (eventId) => call(`/events/${eventId}/team-goals`)
+export const createTeamGoal = (eventId, body) => post(`/events/${eventId}/team-goals`, body)
+export const updateTeamGoal = (id, body) => patch(`/team-goals/${id}`, body)
+export const deleteTeamGoal = (id) => del(`/team-goals/${id}`)
+
 export function listSubmissions(eventId, filters = {}) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(filters)) if (v) qs.set(k, v)

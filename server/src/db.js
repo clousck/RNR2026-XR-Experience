@@ -152,6 +152,22 @@ const MIGRATIONS = [
    WHERE status = 'pending'
      AND challenge_id IN (SELECT id FROM challenges WHERE type = 'QR');
   `,
+  // Retos de Rama: se cumplen cuando `members` integrantes distintos tienen
+  // aprobado el reto. Dan puntos al Score de la Rama, no XP a las personas.
+  `
+  CREATE TABLE team_goals (
+    id            INTEGER PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    icon          TEXT NOT NULL DEFAULT '🤝',
+    description   TEXT NOT NULL DEFAULT '',
+    points        INTEGER NOT NULL DEFAULT 10,
+    challenge_id  INTEGER NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+    members       INTEGER NOT NULL DEFAULT 3,
+    sort_order    INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX team_goals_event ON team_goals(event_id, sort_order);
+  `,
 ]
 
 function migrate(db) {

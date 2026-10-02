@@ -11,6 +11,8 @@ export default function RankingScreen() {
   const [tab, setTab] = useState('people')
   const { data, error, loading, reload } = useAsync(() => getRanking(slug, token), [slug, token])
   const teamLabel = event.settings.teamLabel
+  const ts = event.settings.teamScore
+  const myTeam = data?.teams.find((t) => t.id === data.me?.team?.id)
 
   return (
     <Screen title="Ranking">
@@ -62,14 +64,38 @@ export default function RankingScreen() {
                 <span className="who">
                   {t.name}
                   <small>
-                    {t.members} {t.members === 1 ? 'persona' : 'personas'} · {t.completed} retos
+                    {t.active} de {t.members} participando
+                  </small>
+                  <small>
+                    Desempeño {t.performance} · Participación {t.participation} · Colectivo {t.collective}
                   </small>
                 </span>
-                <span className="score">{t.xp} XP</span>
+                <span className="score">{t.score} pts</span>
               </li>
             ))}
           </ol>
-          <p className="muted small center-text">El puntaje de cada {teamLabel} es la suma del XP de sus integrantes.</p>
+          {myTeam?.goals.length > 0 && (
+            <>
+              <h3>Retos de tu {teamLabel}</h3>
+              <ul className="ranking">
+                {myTeam.goals.map((g) => (
+                  <li key={g.id}>
+                    <span className="pos">{g.icon}</span>
+                    <span className="who">
+                      {g.name}
+                      {g.description && <small>{g.description}</small>}
+                    </span>
+                    <span className="score">{g.met ? '✓' : `${g.count}/${g.members}`}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <p className="muted small center-text">
+            Cada {teamLabel} puede llegar a {ts.performance + ts.participation + ts.collective} puntos: el XP de sus {ts.top.length} mejores
+            integrantes (hasta {ts.performance}), cuántos participan (hasta {ts.participation}) y los retos de {teamLabel} (hasta{' '}
+            {ts.collective}). Tu XP personal no cambia.
+          </p>
         </>
       )}
     </Screen>

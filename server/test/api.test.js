@@ -292,6 +292,56 @@ describe('flujo completo', () => {
     assert.equal(data.teams[0].name, 'Rama A')
   })
 
+  test('score de Rama: desempeño, participación y retos colectivos', async () => {
+    const ranking = async () => (await call('GET', `/admin/events/${eventId}/ranking`, { token: mod })).data.teams
+    // XP posible: 20 + 15 + 10 + 40 + 5 + 5 = 95 → tope ponderado 95 × 2.4 = 228.
+    // Rama A: solo Ana (85 XP) → 150 × 85/228 = 56; 1 activa → 75 × ln 2 / ln 11 = 22.
+    let [a, b] = await ranking()
+    assert.deepEqual(
+      { name: a.name, members: a.members, active: a.active, performance: a.performance, participation: a.participation, collective: a.collective, score: a.score },
+      { name: 'Rama A', members: 1, active: 1, performance: 56, participation: 22, collective: 0, score: 78 },
+    )
+    // Beto esta inscrito pero sin retos aprobados: no suma nada.
+    assert.deepEqual({ members: b.members, active: b.active, score: b.score }, { members: 1, active: 0, score: 0 })
+
+    const goal = { name: 'Presentes en el checkpoint', points: 10, challengeId: qrCh.id, members: 1 }
+    assert.equal((await call('POST', `/admin/events/${eventId}/team-goals`, { token: mod, body: goal })).status, 403)
+    const tooMany = await call('POST', `/admin/events/${eventId}/team-goals`, { token: admin, body: { ...goal, members: 6 } })
+    assert.equal(tooMany.status, 400, 'un reto de Rama no pide más de 5 integrantes')
+    const foreign = await call('POST', `/admin/events/${eventId}/team-goals`, { token: admin, body: { ...goal, challengeId: 9999 } })
+    assert.equal(foreign.status, 400)
+    const created = await call('POST', `/admin/events/${eventId}/team-goals`, { token: admin, body: goal })
+    assert.equal(created.status, 201)
+    const goalId = created.data.goals[0].id
+    ;[a, b] = await ranking()
+    assert.equal(a.collective, 75, 'el único reto de Rama cumplido vale todo el componente')
+    assert.equal(a.score, 153)
+    assert.deepEqual(a.goals.map((g) => [g.count, g.met]), [[1, true]])
+    assert.equal(b.collective, 0)
+
+    // Dos integrantes: una sola persona no puede cumplirlo.
+    await call('PATCH', `/admin/team-goals/${goalId}`, { token: admin, body: { members: 2 } })
+    ;[a] = await ranking()
+    assert.equal(a.collective, 0)
+    assert.deepEqual(a.goals.map((g) => [g.count, g.met]), [[1, false]])
+
+    // El ranking del participante trae lo mismo, y el XP individual no cambio.
+    const mine = await call('GET', '/events/sac-quest-2027/ranking', { token: beto })
+    assert.equal(mine.data.teams[0].score, 78)
+    assert.equal(mine.data.participants[0].xp, 85)
+
+    // Los valores se ajustan por evento; guardar otros ajustes no los pisa.
+    const teamScore = { performance: 100, participation: 50, collective: 50, top: [1, 0.5], participationRef: 5 }
+    const settings = { teamLabel: 'Rama', accent: '#ffd23f', likes: true }
+    const saved = await call('PATCH', `/admin/events/${eventId}`, { token: admin, body: { settings: { ...settings, teamScore } } })
+    assert.deepEqual(saved.data.event.settings.teamScore, teamScore)
+    const kept = await call('PATCH', `/admin/events/${eventId}`, { token: admin, body: { settings } })
+    assert.deepEqual(kept.data.event.settings.teamScore, teamScore)
+    ;[a] = await ranking()
+    // 100 × 85 / (95 × 1.5) = 60; 50 × ln 2 / ln 6 = 19.
+    assert.deepEqual([a.performance, a.participation], [60, 19])
+  })
+
   test('recuperar la cuenta en otro teléfono', async () => {
     const me = (await call('GET', '/events/sac-quest-2027/me', { token: beto })).data.me
     const rec = await call('POST', '/events/sac-quest-2027/recover', { body: { code: me.recoveryCode.toLowerCase() } })
@@ -349,6 +399,9 @@ describe('flujo completo', () => {
     assert.deepEqual(newLocked.unlockRule, { afterChallenges: [newPhoto.id] })
     const teams = (await call('GET', `/admin/events/${newId}/teams`, { token: admin })).data.teams
     assert.equal(teams.length, 2)
+    const goals = (await call('GET', `/admin/events/${newId}/team-goals`, { token: admin })).data.goals
+    assert.equal(goals.length, 1)
+    assert.equal(goals[0].challengeId, list.find((c) => c.title === 'Checkpoint').id, 'apunta al reto copiado')
   })
 
   test('cerrar el evento bloquea nuevos envíos', async () => {

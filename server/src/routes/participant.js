@@ -434,7 +434,7 @@ export function participantRoutes(svc) {
     return c.json({
       participants: people.slice(0, 50),
       me: people.find((p) => p.id === row.id) ?? null,
-      teams: teamRanking(db, ev.id).filter((t) => t.members > 0),
+      teams: teamRanking(db, ev).filter((t) => t.members > 0),
     })
   })
 

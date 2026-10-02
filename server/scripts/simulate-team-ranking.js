@@ -1,155 +1,141 @@
-// Simula el ranking por Rama con la formula propuesta y lo compara con el
-// actual (suma). No modifica nada: solo lee la base.
+// Simula el Score de Rama propuesto (maximo 300 puntos):
+//   desempeño 150 + participacion 75 + retos colectivos 75
+// con los tamaños reales de las Ramas. No toca la base ni el sistema.
 //
-//   node scripts/simulate-team-ranking.js              escenarios sinteticos
-//   node scripts/simulate-team-ranking.js --real       datos de DATA_DIR/quest.db
-//
-// En la Pi, sin reconstruir la imagen (la base esta dentro del contenedor):
-//   docker compose exec -T app node --input-type=module --disable-warning=ExperimentalWarning - --real < server/scripts/simulate-team-ranking.js
-//
-// Autocontenido a proposito (sin imports del proyecto) para poder pasarlo
-// por stdin al contenedor.
-import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+//   node scripts/simulate-team-ranking.js
 
-// --- formulas ---
+// --- configuracion del modelo (lo que despues iria en events.settings) ---
 
-const WEIGHTS = [1, 0.6, 0.4, 0.25, 0.15]
-const BONUS_PER_ACTIVE = 10
-const BONUS_MAX = 100
-
-/** members: [{ xp, active }] (active = al menos un reto aprobado con puntos) */
-function current(members) {
-  return members.reduce((s, m) => s + m.xp, 0)
+const CONFIG = {
+  max: { performance: 150, participation: 75, collective: 75 },
+  top: [1, 0.6, 0.4, 0.25, 0.15], // aporte de los 5 mejores al desempeño
+  participationRef: 10, // activos con los que la participacion llega al maximo
 }
 
-function proposed(members) {
-  const top = members.map((m) => m.xp).sort((a, b) => b - a)
-  const main = WEIGHTS.reduce((s, w, i) => s + w * (top[i] ?? 0), 0)
-  const active = members.filter((m) => m.active).length
-  const bonus = Math.min(active * BONUS_PER_ACTIVE, BONUS_MAX)
-  return { score: main + bonus, main, bonus, active }
+// Inscritos por Rama (formulario del evento), de mayor a menor.
+const SIZES = [29, 18, 9, 8, 8, 5, 4, 4, 4, 2, 2, 1, 1, 1, 1, 1, 1]
+// Con Ramas unidas (maximo 5 personas): 2+2+1 y 1+1+1+1+1.
+const SIZES_MERGED = [29, 18, 9, 8, 8, 5, 4, 4, 4, '5u', '5u']
+
+// --- modelo ---
+
+const isActive = (m) => m.xp > 0
+const topSum = CONFIG.top.reduce((a, b) => a + b, 0)
+
+/** Puntos de una Rama. xpPossible = XP que puede juntar una persona con todos los retos. */
+function scoreTeam(members, goals, xpPossible, cfg = CONFIG) {
+  const xs = members.map((m) => m.xp).sort((a, b) => b - a)
+  const weighted = cfg.top.reduce((s, w, i) => s + w * (xs[i] ?? 0), 0)
+  const active = members.filter(isActive).length
+  const goalTotal = goals.reduce((s, g) => s + g.points, 0)
+  const met = goals.filter((g) => members.filter((m) => m.done.has(g.challengeId)).length >= g.n)
+  const perf = cfg.max.performance * Math.min(1, weighted / (topSum * xpPossible))
+  const part = cfg.max.participation * Math.min(1, Math.log(1 + active) / Math.log(1 + cfg.participationRef))
+  const coll = cfg.max.collective * (met.reduce((s, g) => s + g.points, 0) / goalTotal)
+  return { active, perf, part, coll, score: perf + part + coll }
+}
+
+// --- catalogo supuesto ---
+
+// 12 retos, 300 XP en total; el 13 es la foto grupal (0 XP, solo cuenta para la Rama).
+const POINTS = [10, 20, 20, 20, 30, 20, 30, 40, 30, 20, 30, 30]
+const XP = POINTS.reduce((a, b) => a + b, 0)
+const GROUP_PHOTO = 13
+// Ningun reto colectivo pide mas de 5 miembros.
+const GOALS = [
+  { name: '3 o más miembros completan el reto 2', points: 30, challengeId: 2, n: 3 },
+  { name: '5 o más miembros completan el reto 4', points: 40, challengeId: 4, n: 5 },
+  { name: 'Foto grupal de la Rama aprobada', points: 30, challengeId: GROUP_PHOTO, n: 1 },
+]
+
+/** Una persona hace los retos en orden hasta llegar a su XP objetivo. */
+function member(target) {
+  const done = new Set()
+  let xp = 0
+  POINTS.forEach((p, i) => {
+    if (xp + p <= target) {
+      xp += p
+      done.add(i + 1)
+    }
+  })
+  return { xp, done }
+}
+
+// Generador con semilla: los resultados son repetibles.
+function rng(seed) {
+  let a = seed
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * Rama al azar: cada inscrito participa con probabilidad `rate` y, si
+ * participa, su XP sale de la misma distribucion para todas las Ramas
+ * (muchos con poco, pocos con mucho). Asi solo cambian tamaño y ganas.
+ */
+function randomTeam(size, rate, rand) {
+  const members = Array.from({ length: size }, () => member(rand() < rate ? 10 + 290 * rand() ** 2 : 0))
+  const active = members.filter(isActive)
+  // La foto grupal necesita al menos 3 activos y que se organicen (70 %).
+  if (active.length >= 3 && rand() < 0.7) active[0].done.add(GROUP_PHOTO)
+  return members
+}
+
+const pad = (s, n) => String(s).padEnd(n)
+const num = (v, n = 7, d = 0) => v.toFixed(d).padStart(n)
+
+/** rateOf(size, index) → probabilidad de participar de esa Rama */
+function monteCarlo(title, sizes, rateOf, trials = 4000) {
+  const rand = rng(42)
+  const acc = sizes.map(() => ({ score: 0, perf: 0, part: 0, coll: 0, active: 0, wins: 0, podium: 0, rank: 0 }))
+  for (let k = 0; k < trials; k++) {
+    const rows = sizes.map((s, i) => scoreTeam(randomTeam(parseInt(s), rateOf(s, i), rand), GOALS, XP))
+    const order = rows.map((r, i) => [r.score, i]).sort((a, b) => b[0] - a[0])
+    order.forEach(([, i], pos) => {
+      acc[i].rank += pos + 1
+      if (pos === 0) acc[i].wins++
+      if (pos < 3) acc[i].podium++
+    })
+    rows.forEach((r, i) => {
+      for (const key of ['score', 'perf', 'part', 'coll', 'active']) acc[i][key] += r[key]
+    })
+  }
+  console.log(`\n=== ${title} ===`)
+  console.log(`${pad('Inscritos', 10)}${'activos'.padStart(8)}${'Desemp'.padStart(8)}${'Partic'.padStart(8)}${'Colect'.padStart(8)}${'TOTAL'.padStart(8)}${'puesto'.padStart(8)}${'gana'.padStart(7)}${'podio'.padStart(7)}`)
+  console.log(`${pad('', 10)}${''.padStart(8)}${'/150'.padStart(8)}${'/75'.padStart(8)}${'/75'.padStart(8)}${'/300'.padStart(8)}`)
+  sizes.forEach((s, i) => {
+    const a = acc[i]
+    const label = String(s).endsWith('u') ? `${parseInt(s)} (unidas)` : s
+    console.log(
+      `${pad(label, 10)}${num(a.active / trials, 8, 1)}${num(a.perf / trials, 8)}${num(a.part / trials, 8)}${num(a.coll / trials, 8)}${num(a.score / trials, 8)}${num(a.rank / trials, 8, 1)}${num((100 * a.wins) / trials, 6)}%${num((100 * a.podium) / trials, 6)}%`,
+    )
+  })
 }
 
 // --- salida ---
 
-const pad = (s, n) => String(s).padEnd(n)
-const num = (v, n = 7) => String(Math.round(v * 10) / 10).padStart(n)
+console.log(`Catálogo supuesto: ${POINTS.length} retos, ${XP} XP posibles para una persona.`)
+console.log(`Desempeño máximo (150) = ${XP} × (${CONFIG.top.join(' + ')}) = ${topSum * XP} puntos ponderados.`)
+console.log('Retos colectivos:')
+GOALS.forEach((g) => console.log(`  · ${g.name} (${g.points} %)`))
 
-function compare(title, teams) {
-  const rows = teams.map((t) => ({ ...t, cur: current(t.members), ...proposed(t.members) }))
-  const curRank = new Map([...rows].sort((a, b) => b.cur - a.cur).map((r, i) => [r.name, i + 1]))
-  rows.sort((a, b) => b.score - a.score)
-  const w = Math.max(20, ...rows.map((r) => r.name.length + 2))
-  console.log(`\n=== ${title} ===`)
-  console.log(
-    `${pad('#', 3)}${pad('Rama', w)}${pad('inscr.', 7)}${pad('activos', 8)}${'suma'.padStart(7)}  ${'top5'.padStart(7)}${'bonus'.padStart(7)}${'score'.padStart(8)}  antes`,
-  )
-  rows.forEach((r, i) => {
-    const before = curRank.get(r.name)
-    const move = before === i + 1 ? '=' : before > i + 1 ? `↑${before - i - 1}` : `↓${i + 1 - before}`
-    console.log(
-      `${pad(i + 1, 3)}${pad(r.name, w)}${pad(r.members.length, 7)}${pad(r.active, 8)}${num(r.cur)}  ${num(r.main)}${num(r.bonus)}${num(r.score, 8)}  #${before} ${move}`,
-    )
-  })
-  return rows
+console.log('\n=== Participación: puntos (de 75) según miembros activos ===')
+console.log([1, 2, 3, 4, 5, 6, 8, 10, 15, 29].map((n) => `${n}→${scoreTeam(Array.from({ length: n }, () => member(10)), GOALS, XP).part.toFixed(0)}`).join('  '))
+
+console.log('\n=== Topes: lo máximo que puede sacar una Rama según cuánta gente tiene (todos con todo el XP) ===')
+for (const n of [1, 2, 3, 4, 5, 8, 10]) {
+  const members = Array.from({ length: n }, () => member(XP))
+  if (n >= 3) members[0].done.add(GROUP_PHOTO)
+  const r = scoreTeam(members, GOALS, XP)
+  console.log(`${pad(`${n} persona${n > 1 ? 's' : ''}`, 12)} desempeño ${num(r.perf, 4)} + participación ${num(r.part, 3)} + colectivo ${num(r.coll, 3)} = ${num(r.score, 4)} / 300`)
 }
 
-// --- datos reales ---
-
-function real() {
-  const file = join(resolve(process.env.DATA_DIR || './data'), 'quest.db')
-  if (!existsSync(file)) {
-    console.error(`No existe ${file}. Define DATA_DIR o corre dentro del contenedor.`)
-    process.exit(1)
-  }
-  const db = new DatabaseSync(file, { readOnly: true })
-  for (const ev of db.prepare('SELECT id, name FROM events ORDER BY id').all()) {
-    const people = db
-      .prepare(
-        `SELECT p.id, p.team_id, t.name AS team,
-                COALESCE(SUM(s.points_awarded), 0) AS xp,
-                SUM(CASE WHEN s.points_awarded > 0 THEN 1 ELSE 0 END) AS scored
-           FROM participants p
-           JOIN teams t ON t.id = p.team_id
-           LEFT JOIN submissions s ON s.participant_id = p.id AND s.status = 'approved'
-          WHERE p.event_id = ? AND p.banned = 0
-          GROUP BY p.id`,
-      )
-      .all(ev.id)
-    const teams = new Map()
-    for (const t of db.prepare('SELECT name FROM teams WHERE event_id = ?').all(ev.id)) teams.set(t.name, [])
-    for (const p of people) teams.get(p.team).push({ xp: p.xp, active: p.scored > 0 })
-    compare(`${ev.name} (datos reales, ${people.length} inscritos con Rama)`, [...teams].map(([name, members]) => ({ name, members })))
-  }
-  db.close()
-}
-
-// --- escenarios sinteticos ---
-// Escala supuesta: retos de 10-40 XP; quien hace todo llega a ~300 XP.
-
-const team = (name, size, xps) => ({
-  name,
-  members: Array.from({ length: size }, (_, i) => ({ xp: xps[i] ?? 0, active: (xps[i] ?? 0) > 0 })),
-})
-const range = (n, f) => Array.from({ length: n }, (_, i) => f(i))
-
-function synthetic() {
-  compare('Los 6 escenarios juntos', [
-    team('1. Solo, muy activa', 1, [300]),
-    team('2. 40 inscr., 1 juega', 40, [150]),
-    team('3. 40 inscr., 5 juegan', 40, [200, 150, 120, 100, 80]),
-    team('4. 40 inscr., 10 juegan', 40, [200, 150, 120, 100, 80, 70, 60, 50, 40, 30]),
-    team('5. 40 inscr., 30 juegan poco', 40, range(30, (i) => 20 + (i % 3) * 10)),
-    team('6. 3 personas muy activas', 3, [280, 260, 240]),
-  ])
-
-  console.log('\n=== Comprobaciones ===')
-  const check = (ok, text) => console.log(`${ok ? '✓' : '✗'} ${text}`)
-
-  // Inscritos sin actividad no suman
-  const a = proposed(team('', 1, [100]).members).score
-  const b = proposed(team('', 40, [100]).members).score
-  check(a === b, `Inscritos sin actividad no dan ventaja: 1 inscrito = ${a}, 40 inscritos con 1 activo = ${b}`)
-
-  // Trabajo que necesita una Rama de 40 para empatar con una persona sola
-  const solo = proposed(team('', 1, [300]).members).score
-  for (const k of [1, 5, 10]) {
-    let x = 0
-    while (proposed(team('', 40, range(k, () => x)).members).score < solo) x++
-    console.log(`  Rama de 40 con ${k} activos empata a la persona sola de 300 XP con ${x} XP cada uno → ${x * k} XP en total (${((x * k) / 300).toFixed(1)}× el trabajo)`)
-  }
-
-  // Cada miembro activo extra suma algo
-  const flat = []
-  for (let n = 1; n <= 40; n++) {
-    const s0 = proposed(team('', 40, range(n - 1, () => 100).concat([0])).members).score
-    const s1 = proposed(team('', 40, range(n - 1, () => 100).concat([20])).members).score
-    if (s1 <= s0) flat.push(n)
-  }
-  check(
-    flat.length === 0,
-    flat.length
-      ? `Un miembro activo extra (con 20 XP, fuera del top 5) deja de sumar desde el activo n.º ${flat[0]}`
-      : 'Cada miembro activo extra siempre suma algo',
-  )
-
-  // Una sola persona puede competir
-  const typical = proposed(team('', 40, [200, 150, 120, 100, 80]).members).score
-  const soloMax = proposed(team('', 1, [300]).members).score
-  check(soloMax >= typical * 0.75, `Persona sola con 300 XP (${soloMax}) frente a una Rama de 5 activos típicos (${typical}): ${Math.round((soloMax / typical) * 100)} %`)
-
-  // El bonus no domina
-  for (const [name, xps] of [
-    ['activos típicos', [200, 150, 120, 100, 80, 70, 60, 50, 40, 30]],
-    ['30 activos con 20-40 XP', range(30, (i) => 20 + (i % 3) * 10)],
-    ['10 activos con solo la selfie (10 XP)', range(10, () => 10)],
-  ]) {
-    const r = proposed(team('', 40, xps).members)
-    console.log(`  Peso del bonus, ${name}: ${r.bonus} de ${r.score} (${Math.round((r.bonus / r.score) * 100)} %)`)
-  }
-}
-
-if (process.argv.includes('--real')) real()
-else synthetic()
+monteCarlo('Todas las Ramas participan igual (60 %) · promedio de 4000 eventos', SIZES, () => 0.6)
+monteCarlo('La Rama de 29 participa poco (30 %); el resto 60 %', SIZES, (s) => (s === 29 ? 0.3 : 0.6))
+monteCarlo('Las Ramas de 9 o menos participan mucho (90 %); las de 29 y 18, 60 %', SIZES, (s) => (parseInt(s) <= 9 ? 0.9 : 0.6))
+monteCarlo('Con Ramas unidas (2+2+1 y 1+1+1+1+1) · todas 60 %', SIZES_MERGED, () => 0.6)
+monteCarlo('Con Ramas unidas · las de 9 o menos participan mucho (90 %)', SIZES_MERGED, (s) => (parseInt(s) <= 9 ? 0.9 : 0.6))

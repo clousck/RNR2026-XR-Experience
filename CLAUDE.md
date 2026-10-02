@@ -36,6 +36,14 @@ guarda lo que no se deduce leyendo el código.
   en desarrollo Vite hace proxy a `localhost:8787`). La API sirve también `dist/` (`STATIC_DIR`).
 - **XP, niveles, logros y ranking se calculan** desde las submissions aprobadas (no hay contadores
   guardados) → aprobar/rechazar/borrar corrige todo solo. No hay tabla ParticipantBadge.
+- **Score de Rama** (desde 2026-10-02, `teamRanking` en `rules.js`): máx. 300 = desempeño 150 (XP de los
+  5 mejores ponderado 100/60/40/25/15 %, frente a todo el XP de los retos publicados, activos o no)
+  + participación 75 (activos = ≥1 reto aprobado con puntos; curva log, tope 10) + colectivo 75
+  (tabla `team_goals`: «N integrantes completan el reto X», N ≤ 5, sin XP). Valores por evento en
+  `settings.teamScore`. Decidido con simulaciones (`server/scripts/simulate-team-ranking.js`): la suma
+  de XP hacía ganar siempre a la Rama más grande; los inscritos inactivos no deben sumar. Las Ramas
+  muy chicas se juntan a mano en el panel (máx. 5 personas por Rama unida).
+- Aprobación fija por tipo: QR automático; PHOTO/AR siempre con moderador (`applyTypeRules`).
 - Fotos: el teléfono las reduce a 2048 px JPEG y quita el EXIF (`src/shared/imageResize.js`); la API
   entrega **URLs firmadas** (`media/...?exp&sig`, relativas a la base de la API), ventanas de 6 h
   para que el navegador las cachee.
@@ -69,7 +77,7 @@ guarda lo que no se deduce leyendo el código.
 - Cambios de esquema: **agregar** una migración nueva en `MIGRATIONS` (`db.js`), nunca editar una publicada.
 
 ## Verificar cambios
-    cd server && npm test             # 23 pruebas (API completa + config)
+    cd server && npm test             # 24 pruebas (API completa + config)
     npx oxlint && npm run build       # 0 errores esperados (hay ~22 warnings de estilo conocidos)
     cd server && npm run seed-demo && npm run loadtest -- --code <código>
 
@@ -78,5 +86,5 @@ guarda lo que no se deduce leyendo el código.
 - Probado: tests de API, recorrido E2E en navegador headless (Edge + puppeteer-core, cámara
   falsa), carga de 150 usuarios simultáneos en el PC (no en la Pi).
 - **Pendiente**: probar en iPhone y Android reales (cámara, AR, subida); desplegar en la Pi con
-  Docker (docs/docker.md); decidir si `/` pasa a ser `/entrar` con el dominio nuevo; decidir
-  ranking por Rama suma vs promedio (hoy suma).
+  Docker (docs/docker.md); decidir si `/` pasa a ser `/entrar` con el dominio nuevo; encuestas
+  sobre las charlas (tipos TRIVIA/TEXT, activables por QR o por reto): diseñar antes de programar.

@@ -15,10 +15,30 @@ export const DEFAULT_LEVELS = [
   { name: 'Tesla', minXp: 400 },
 ]
 
+/**
+ * Score de Rama (maximo performance + participation + collective):
+ *  - performance: XP de los mejores de la Rama, ponderado con `top`; el
+ *    maximo es que esos puestos tengan todo el XP posible de una persona.
+ *  - participation: miembros activos, con rendimientos decrecientes; llega
+ *    al maximo con `participationRef` activos.
+ *  - collective: retos de Rama cumplidos (tabla team_goals).
+ */
+export const DEFAULT_TEAM_SCORE = {
+  performance: 150,
+  participation: 75,
+  collective: 75,
+  top: [1, 0.6, 0.4, 0.25, 0.15],
+  participationRef: 10,
+}
+
+// Un reto de Rama no pide mas que esto: asi lo puede cumplir una Rama chica.
+export const TEAM_GOAL_MAX_MEMBERS = 5
+
 export const DEFAULT_SETTINGS = {
   teamLabel: 'Rama', // como se llama un equipo en este evento
   accent: '#ffd23f',
   likes: true,
+  teamScore: DEFAULT_TEAM_SCORE,
 }
 
 export const CHALLENGE_TYPES = ['PHOTO', 'AR', 'QR']
@@ -38,8 +58,26 @@ export function toEvent(row) {
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     levels: normalizeLevels(parseJson(row.levels, [])),
-    settings: { ...DEFAULT_SETTINGS, ...parseJson(row.settings, {}) },
+    settings: withTeamScore({ ...DEFAULT_SETTINGS, ...parseJson(row.settings, {}) }),
     createdAt: row.created_at,
+  }
+}
+
+// Eventos creados antes del Score de Rama no traen todos los campos.
+function withTeamScore(settings) {
+  return { ...settings, teamScore: { ...DEFAULT_TEAM_SCORE, ...settings.teamScore } }
+}
+
+export function toTeamGoal(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    icon: row.icon,
+    description: row.description,
+    points: row.points,
+    challengeId: row.challenge_id,
+    members: row.members,
+    sortOrder: row.sort_order,
   }
 }
 
@@ -279,28 +317,80 @@ export function participantRanking(db, eventId) {
   }))
 }
 
-/** Ranking por equipo: suma del XP de sus integrantes. */
-export function teamRanking(db, eventId) {
-  const rows = db.all(
-    `SELECT t.id, t.name, t.short_name,
-            COUNT(DISTINCT p.id) AS members,
+/** XP que puede juntar una persona: todos los retos publicados, sigan activos o no. */
+export function possibleXp(db, eventId) {
+  return db.get(`SELECT COALESCE(SUM(points), 0) AS xp FROM challenges WHERE event_id = :eventId AND status != 'draft'`, {
+    eventId,
+  }).xp
+}
+
+/**
+ * Ranking por equipo con el Score de Rama (ver DEFAULT_TEAM_SCORE). El XP de
+ * las personas no cambia: esto solo decide como se compara una Rama con otra.
+ * Inscritos sin actividad no suman nada.
+ */
+export function teamRanking(db, event) {
+  const cfg = event.settings.teamScore
+  const eventId = event.id
+  const teams = db.all('SELECT id, name, short_name FROM teams WHERE event_id = :eventId', { eventId })
+  const people = db.all(
+    `SELECT p.team_id,
             COALESCE(SUM(s.points_awarded), 0) AS xp,
-            COUNT(s.id) AS completed
-       FROM teams t
-       LEFT JOIN participants p ON p.team_id = t.id AND p.banned = 0
+            COUNT(s.id) AS completed,
+            COALESCE(SUM(s.points_awarded > 0), 0) AS scored
+       FROM participants p
        LEFT JOIN submissions s ON s.participant_id = p.id AND s.status = 'approved'
-      WHERE t.event_id = :eventId
-      GROUP BY t.id
-      ORDER BY xp DESC, members DESC, t.name COLLATE NOCASE`,
+      WHERE p.event_id = :eventId AND p.banned = 0 AND p.team_id IS NOT NULL
+      GROUP BY p.id`,
     { eventId },
   )
-  return rows.map((r, i) => ({
-    rank: i + 1,
-    id: r.id,
-    name: r.name,
-    shortName: r.short_name,
-    members: r.members,
-    xp: r.xp,
-    completed: r.completed,
-  }))
+  // Cuantos integrantes distintos de cada Rama tienen aprobado cada reto.
+  const done = new Map()
+  for (const r of db.all(
+    `SELECT p.team_id, s.challenge_id, COUNT(DISTINCT p.id) AS n
+       FROM submissions s JOIN participants p ON p.id = s.participant_id
+      WHERE s.event_id = :eventId AND s.status = 'approved' AND p.banned = 0 AND p.team_id IS NOT NULL
+      GROUP BY p.team_id, s.challenge_id`,
+    { eventId },
+  )) {
+    done.set(`${r.team_id}:${r.challenge_id}`, r.n)
+  }
+  const goals = db
+    .all('SELECT * FROM team_goals WHERE event_id = :eventId ORDER BY sort_order, id', { eventId })
+    .map(toTeamGoal)
+  const goalTotal = goals.reduce((sum, g) => sum + g.points, 0)
+  const weightSum = cfg.top.reduce((a, b) => a + b, 0)
+  const best = weightSum * possibleXp(db, eventId)
+
+  const rows = teams.map((t) => {
+    const members = people.filter((p) => p.team_id === t.id)
+    const xps = members.map((m) => m.xp).sort((a, b) => b - a)
+    const weighted = cfg.top.reduce((sum, w, i) => sum + w * (xps[i] ?? 0), 0)
+    const active = members.filter((m) => m.scored > 0).length
+    const teamGoals = goals.map((g) => {
+      const count = done.get(`${t.id}:${g.challengeId}`) ?? 0
+      return { id: g.id, name: g.name, icon: g.icon, description: g.description, members: g.members, count, met: count >= g.members }
+    })
+    const met = goals.filter((_, i) => teamGoals[i].met).reduce((sum, g) => sum + g.points, 0)
+    const performance = best ? cfg.performance * Math.min(1, weighted / best) : 0
+    const participation = cfg.participation * Math.min(1, Math.log(1 + active) / Math.log(1 + cfg.participationRef))
+    const collective = goalTotal ? (cfg.collective * met) / goalTotal : 0
+    return {
+      id: t.id,
+      name: t.name,
+      shortName: t.short_name,
+      members: members.length,
+      active,
+      xp: members.reduce((sum, m) => sum + m.xp, 0),
+      completed: members.reduce((sum, m) => sum + m.completed, 0),
+      exact: performance + participation + collective,
+      performance: Math.round(performance),
+      participation: Math.round(participation),
+      collective: Math.round(collective),
+      goals: teamGoals,
+    }
+  })
+  rows.sort((a, b) => b.exact - a.exact || b.active - a.active || a.name.localeCompare(b.name, 'es'))
+  // El total es la suma de lo que se muestra de cada componente.
+  return rows.map(({ exact: _exact, ...r }, i) => ({ rank: i + 1, ...r, score: r.performance + r.participation + r.collective }))
 }

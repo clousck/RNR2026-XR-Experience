@@ -16,12 +16,15 @@ import {
   CHALLENGE_TYPES,
   DEFAULT_LEVELS,
   DEFAULT_SETTINGS,
+  DEFAULT_TEAM_SCORE,
+  TEAM_GOAL_MAX_MEMBERS,
   normalizeLevels,
   participantRanking,
   teamRanking,
   toBadge,
   toChallenge,
   toEvent,
+  toTeamGoal,
 } from '../rules.js'
 import {
   HttpError,
@@ -219,12 +222,30 @@ export function adminRoutes(svc) {
     },
     settings: (v) => {
       if (!v || typeof v !== 'object') throw badRequest('Ajustes inválidos.')
-      return {
+      const settings = {
         teamLabel: str(v.teamLabel ?? DEFAULT_SETTINGS.teamLabel, 'nombre de equipo', { min: 1, max: 20 }),
         accent: /^#[0-9a-f]{6}$/i.test(v.accent) ? v.accent : DEFAULT_SETTINGS.accent,
         likes: v.likes !== false,
       }
+      // Solo si viene: los demas formularios de ajustes no lo mandan.
+      if (v.teamScore) settings.teamScore = teamScoreFields(v.teamScore)
+      return settings
     },
+  }
+
+  function teamScoreFields(v) {
+    if (typeof v !== 'object') throw badRequest('Puntaje de equipo inválido.')
+    const top = Array.isArray(v.top) ? v.top.map(Number) : DEFAULT_TEAM_SCORE.top
+    if (!top.length || top.length > 10 || top.some((w) => !(w >= 0 && w <= 1)) || !(top[0] > 0)) {
+      throw badRequest('Los pesos de los mejores integrantes deben estar entre 0 y 100 %.')
+    }
+    return {
+      performance: int(v.performance, 'puntos de desempeño', { min: 0, max: 10000 }),
+      participation: int(v.participation, 'puntos de participación', { min: 0, max: 10000 }),
+      collective: int(v.collective, 'puntos colectivos', { min: 0, max: 10000 }),
+      top,
+      participationRef: int(v.participationRef, 'tope de participación', { min: 1, max: 1000 }),
+    }
   }
 
   r.post('/events', async (c) => {
@@ -263,6 +284,8 @@ export function adminRoutes(svc) {
     const ev = eventParam(c)
     const body = await jsonBody(c)
     const data = pick(body, eventFields)
+    // Cada formulario manda solo su parte de los ajustes: el resto se conserva.
+    if (data.settings) data.settings = { ...ev.settings, ...data.settings }
     if (body.regenerateJoinCode) data.joinCode = uniqueCode('events', 'join_code', 6)
     update('events', ev.id, data, {
       name: ['name'],
@@ -358,6 +381,9 @@ export function adminRoutes(svc) {
         const rule = { ...b.rule }
         if (rule.type === 'challenge') rule.challengeId = idMap.get(Number(rule.challengeId)) ?? null
         insertBadge(eventId, { ...b, rule })
+      }
+      for (const g of db.all('SELECT * FROM team_goals WHERE event_id = :id', { id: src.id }).map(toTeamGoal)) {
+        insertTeamGoal(eventId, { ...g, challengeId: idMap.get(g.challengeId) })
       }
       return eventId
     })
@@ -676,6 +702,89 @@ export function adminRoutes(svc) {
     return c.json({ badges: listBadges(b.event_id) })
   })
 
+  // --- retos de Rama (puntos colectivos) ---
+
+  /** El reto tiene que ser de este evento. */
+  function goalChallenge(eventId, v) {
+    const id = int(v, 'reto', { min: 1 })
+    if (!db.get('SELECT 1 FROM challenges WHERE id = :id AND event_id = :eventId', { id, eventId })) {
+      throw badRequest('Ese reto no es de este evento.')
+    }
+    return id
+  }
+
+  const teamGoalFields = {
+    name: (v) => str(v, 'nombre', { min: 2, max: 60 }),
+    icon: (v) => str(v, 'icono', { min: 1, max: 16 }),
+    description: (v) => str(v, 'descripción', { max: 200 }),
+    points: (v) => int(v, 'valor', { min: 1, max: 1000 }),
+    members: (v) => int(v, 'integrantes', { min: 1, max: TEAM_GOAL_MAX_MEMBERS }),
+    sortOrder: (v) => int(v, 'orden', { min: 0, max: 100000 }),
+  }
+
+  function insertTeamGoal(eventId, g) {
+    db.run(
+      `INSERT INTO team_goals (event_id, name, icon, description, points, challenge_id, members, sort_order)
+       VALUES (:eventId, :name, :icon, :description, :points, :challengeId, :members, :sortOrder)`,
+      {
+        eventId,
+        name: g.name,
+        icon: g.icon ?? '🤝',
+        description: g.description ?? '',
+        points: g.points ?? 10,
+        challengeId: g.challengeId,
+        members: g.members ?? 3,
+        sortOrder: g.sortOrder ?? 0,
+      },
+    )
+  }
+
+  const listTeamGoals = (eventId) =>
+    db.all('SELECT * FROM team_goals WHERE event_id = :eventId ORDER BY sort_order, id', { eventId }).map(toTeamGoal)
+
+  r.get('/events/:eventId/team-goals', (c) => c.json({ goals: listTeamGoals(eventParam(c).id) }))
+
+  r.post('/events/:eventId/team-goals', async (c) => {
+    requireAdmin(c)
+    const ev = eventParam(c)
+    const body = await jsonBody(c)
+    const data = pick(body, teamGoalFields)
+    if (!data.name) throw badRequest('Falta el nombre.')
+    insertTeamGoal(ev.id, { ...data, challengeId: goalChallenge(ev.id, body.challengeId) })
+    return c.json({ goals: listTeamGoals(ev.id) }, 201)
+  })
+
+  function teamGoalOf(c) {
+    const g = db.get('SELECT * FROM team_goals WHERE id = :id', { id: int(c.req.param('id'), 'id') })
+    if (!g) throw notFound('Reto de equipo no encontrado.')
+    return g
+  }
+
+  r.patch('/team-goals/:id', async (c) => {
+    requireAdmin(c)
+    const g = teamGoalOf(c)
+    const body = await jsonBody(c)
+    const data = pick(body, teamGoalFields)
+    if (body.challengeId !== undefined) data.challengeId = goalChallenge(g.event_id, body.challengeId)
+    update('team_goals', g.id, data, {
+      name: ['name'],
+      icon: ['icon'],
+      description: ['description'],
+      points: ['points'],
+      members: ['members'],
+      challengeId: ['challenge_id'],
+      sortOrder: ['sort_order'],
+    })
+    return c.json({ goals: listTeamGoals(g.event_id) })
+  })
+
+  r.delete('/team-goals/:id', (c) => {
+    requireAdmin(c)
+    const g = teamGoalOf(c)
+    db.run('DELETE FROM team_goals WHERE id = :id', { id: g.id })
+    return c.json({ goals: listTeamGoals(g.event_id) })
+  })
+
   // --- envios y moderacion ---
 
   const SUBMISSION_SELECT = `
@@ -863,7 +972,7 @@ export function adminRoutes(svc) {
 
   r.get('/events/:eventId/ranking', (c) => {
     const ev = eventParam(c)
-    return c.json({ participants: participantRanking(db, ev.id), teams: teamRanking(db, ev.id) })
+    return c.json({ participants: participantRanking(db, ev.id), teams: teamRanking(db, ev) })
   })
 
   r.get('/events/:eventId/stats', (c) => {
@@ -896,7 +1005,7 @@ export function adminRoutes(svc) {
          FROM submissions WHERE event_id = :eventId GROUP BY hour ORDER BY hour`,
       p,
     )
-    return c.json({ totals, byChallenge, byTeam: teamRanking(db, ev.id), byHour })
+    return c.json({ totals, byChallenge, byTeam: teamRanking(db, ev), byHour })
   })
 
   // --- exportacion ---
