@@ -552,7 +552,7 @@ function DuplicateCard() {
       <h3>Duplicar evento</h3>
       <p className="muted small">
         Crea un evento nuevo con las mismas {event.settings.teamLabel}s, retos (en borrador), logros, niveles y ajustes. Sin
-        participantes ni fotos. Ideal para pasar del Taller de Directivos a la RNR.
+        participantes ni fotos. Ideal para reutilizar un evento en el siguiente.
       </p>
       <div className="form-grid">
         <label>

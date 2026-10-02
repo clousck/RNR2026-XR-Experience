@@ -30,7 +30,7 @@ export default function EnterCode() {
     <div className="quest">
       <section className="screen join">
         <div className="join-hero">
-          <p className="eyebrow">RNR Quest</p>
+          <p className="eyebrow">SAC Quest</p>
           <h1>Entra a tu evento</h1>
           <p className="muted">Escribe el código que aparece en los carteles del evento.</p>
         </div>

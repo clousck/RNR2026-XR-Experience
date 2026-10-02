@@ -1,15 +1,20 @@
 # CLAUDE.md — contexto para sesiones de Claude Code
 
-RNR Quest: gamificación web para eventos de IEEE Ecuador. Nació como el booth AR
+SAC Quest (antes RNR Quest): gamificación web para eventos de IEEE Ecuador. Nació como el booth AR
 "Foto con Watt" y evolucionó sin reescribirse. Qué hace, rutas, comandos y
 estructura: **README.md**. Despliegue: **docs/docker.md**. Este archivo solo
 guarda lo que no se deduce leyendo el código.
 
 ## Usuario y contexto
-- Se usará en **2027** en dos eventos: **Taller de Directivos** y **RNR** (multi-evento real).
+- Se usará en **2027** en varios eventos de IEEE Ecuador (multi-evento real; los eventos se crean
+  en el panel). El producto se llama **SAC Quest** desde 2026-10-02.
+- Del nombre anterior quedan **a propósito** los identificadores internos: proyecto y volumen de
+  Compose (`rnr-quest`, `rnr-data`: ahí están los datos de producción), variables `RNR_*`, claves
+  de localStorage/IndexedDB (`rnrquest:*`: renombrarlas cierra sesiones), el túnel `rnr-quest` y la
+  carpeta del repo. No renombrarlos sin migrar los datos.
 - ~100–150 participantes. Moderan el usuario y el **SAC team (~10 personas)**.
 - Servidor: **Raspberry Pi 5, 8 GB, 32 GB** (probablemente microSD → recomendar SSD), detrás de
-  **Cloudflare Tunnel**. Dominio (por ahora): **ieeequest.penginexr.com**. Va en un solo lugar,
+  **Cloudflare Tunnel**. Dominio (por ahora): **sacquest.penginexr.com**. Va en un solo lugar,
   `server/.env` → `APP_DOMAIN` (QR y CORS salen de ahí). No hay API keys externas.
 - Despliegue **solo con Docker** (desde 2026-10-01; se quitaron `deploy/` con systemd y Cloudflare
   Pages): `Dockerfile` (página + API en una imagen, datos en `/data`, usuario `node` uid 1000) y

@@ -67,7 +67,7 @@ export default function AdminApp() {
       <div className="quest admin">
         <header className="admin-top no-print">
           <Link to="/admin" className="brand">
-            RNR Quest <span>· Panel</span>
+            SAC Quest <span>· Panel</span>
           </Link>
           <nav>
             {ctx.isAdmin && <Link to="/admin/usuarios">Usuarios</Link>}
@@ -111,7 +111,7 @@ function Login({ onLogin }) {
   return (
     <section className="screen join">
       <div className="join-hero">
-        <p className="eyebrow">RNR Quest</p>
+        <p className="eyebrow">SAC Quest</p>
         <h1>Panel de organización</h1>
       </div>
       <form className="card form" onSubmit={submit}>

@@ -19,7 +19,7 @@ const storage = new LocalStorage(join(config.dataDir, 'files'))
 const app = createApp({ db, storage, config })
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
-  console.log(`RNR Quest API en http://${config.host}:${info.port}/api  (datos: ${config.dataDir})`)
+  console.log(`SAC Quest API en http://${config.host}:${info.port}/api  (datos: ${config.dataDir})`)
   if (!config.production) console.log('Modo desarrollo: APP_SECRET de prueba.')
 })
 

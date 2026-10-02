@@ -1,6 +1,6 @@
-# RNR Quest
+# SAC Quest
 
-Gamificación para eventos de IEEE Ecuador (Taller de Directivos, RNR). Desde el
+Gamificación para eventos de IEEE Ecuador. Desde el
 teléfono, sin instalar nada:
 
     QR del evento → nombre y Rama → retos → cámara → subir → puntos
@@ -15,7 +15,7 @@ teléfono, sin instalar nada:
   (también desde el teléfono), participantes, ranking con pantalla grande,
   estadísticas, descarga de fotos en ZIP, imprimir QRs, abrir y cerrar el
   evento, duplicar un evento para el siguiente.
-- **Multi-evento**: nada de la RNR está en el código; cada evento se crea en el panel.
+- **Multi-evento**: ningún evento está en el código; cada uno se crea en el panel.
 
 ## Instalación
 
@@ -24,7 +24,7 @@ teléfono, sin instalar nada:
 | | |
 |---|---|
 | **Servidor** | Raspberry Pi 5 (u otro Linux de 64 bits) con **Docker**. Idealmente un SSD por USB para los datos. |
-| **Dominio** | `ieeequest.penginexr.com`, gestionado en Cloudflare (plan gratuito). |
+| **Dominio** | `sacquest.penginexr.com`, gestionado en Cloudflare (plan gratuito). |
 | **API keys** | **Ninguna.** El proyecto no usa servicios externos. Los únicos secretos son `APP_SECRET`, el token del túnel de Cloudflare y las contraseñas del panel. |
 
 ### Dónde va cada configuración
@@ -54,7 +54,7 @@ docker compose --profile tunnel up -d --build
 docker compose exec app npm run create-admin -- --username admin
 ```
 
-Luego: `https://ieeequest.penginexr.com/admin`. Actualizar: `git pull && docker compose up -d --build`.
+Luego: `https://sacquest.penginexr.com/admin`. Actualizar: `git pull && docker compose up -d --build`.
 
 Guía paso a paso desde una Pi recién instalada (Docker, SSD, túnel, backups,
 checklist del evento, problemas comunes): **[docs/docker.md](docs/docker.md)**.
@@ -143,7 +143,7 @@ contacto con el backend
 # Booth de Watt
 
 Es la experiencia original: se abre la cámara con Watt encima, se elige una
-pose, se toma la foto con cuenta regresiva de 3 segundos y se comparte. En RNR
+pose, se toma la foto con cuenta regresiva de 3 segundos y se comparte. En SAC
 Quest es además el reto **AR**: en modo `challenge` la foto se envía como
 evidencia en vez de compartirse.
 

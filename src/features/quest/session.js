@@ -1,4 +1,6 @@
-// Sesion de la persona, una por evento (puede estar en el Taller y en la RNR).
+// Sesion de la persona, una por evento (puede estar en varios eventos).
+// El prefijo conserva el nombre anterior (RNR Quest): cambiarlo cerraria la
+// sesion de quienes ya entraron.
 const PREFIX = 'rnrquest:v1:'
 
 export const session = {

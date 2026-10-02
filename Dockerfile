@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Imagen de RNR Quest: la API (server/) sirviendo tambien la pagina (dist/),
+# Imagen de SAC Quest: la API (server/) sirviendo tambien la pagina (dist/),
 # todo en un dominio. Funciona en la Raspberry Pi 5 (arm64) y en un PC (amd64).
 # Uso normal: docker compose up -d --build   (ver docs/docker.md)
 

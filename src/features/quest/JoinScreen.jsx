@@ -50,7 +50,7 @@ export default function JoinScreen({ event, teams, notice, onJoined }) {
   return (
     <section className="screen join">
       <div className="join-hero">
-        <p className="eyebrow">RNR Quest</p>
+        <p className="eyebrow">SAC Quest</p>
         <h1>{event.name}</h1>
         {event.description && <p className="muted">{event.description}</p>}
       </div>

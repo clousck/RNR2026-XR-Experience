@@ -65,11 +65,11 @@ export default function EventsList() {
           <div className="form-grid">
             <label>
               Nombre
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="RNR 2027" required minLength={2} />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="SAC Quest 2027" required minLength={2} />
             </label>
             <label>
               Identificador en la URL (opcional)
-              <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="rnr2027" />
+              <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="sacquest2027" />
             </label>
           </div>
           <p className="muted small">

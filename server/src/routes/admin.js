@@ -287,7 +287,7 @@ export function adminRoutes(svc) {
     return c.json({ ok: true })
   })
 
-  // Duplicar un evento (p. ej. del Taller de Directivos a la RNR): copia
+  // Duplicar un evento (para reutilizarlo en el siguiente): copia
   // equipos, retos, badges, niveles y ajustes. No copia participantes ni fotos.
   r.post('/events/:eventId/duplicate', async (c) => {
     requireAdmin(c)

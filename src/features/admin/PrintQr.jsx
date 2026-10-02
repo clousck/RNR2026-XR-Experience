@@ -29,7 +29,7 @@ export default function PrintQr() {
         {!only && (
           <div className="print-item">
             <p className="print-eyebrow">{event.name}</p>
-            <h2>¡Únete a RNR Quest!</h2>
+            <h2>¡Únete a SAC Quest!</h2>
             <QrImage value={eventJoinUrl(event)} size={260} />
             <p>Escanea con la cámara de tu teléfono</p>
             <p className="print-code">

@@ -77,9 +77,9 @@ describe('flujo completo', () => {
     const forbidden = await call('POST', '/admin/events', { token: mod, body: { name: 'X' } })
     assert.equal(forbidden.status, 403, 'un moderador no crea eventos')
 
-    const { status, data } = await call('POST', '/admin/events', { token: admin, body: { name: 'Taller de Directivos 2027' } })
+    const { status, data } = await call('POST', '/admin/events', { token: admin, body: { name: 'SAC Quest 2027' } })
     assert.equal(status, 201)
-    assert.equal(data.event.slug, 'taller-de-directivos-2027')
+    assert.equal(data.event.slug, 'sac-quest-2027')
     assert.equal(data.event.status, 'draft')
     assert.match(data.event.joinCode, /^[A-Z2-9]{6}$/)
     eventId = data.event.id
@@ -111,18 +111,18 @@ describe('flujo completo', () => {
   })
 
   test('un evento en borrador no es visible; abierto sí', async () => {
-    assert.equal((await call('GET', '/events/taller-de-directivos-2027')).status, 404)
+    assert.equal((await call('GET', '/events/sac-quest-2027')).status, 404)
     await call('PATCH', `/admin/events/${eventId}`, { token: admin, body: { status: 'open' } })
-    const { data } = await call('GET', '/events/taller-de-directivos-2027')
-    assert.equal(data.event.name, 'Taller de Directivos 2027')
+    const { data } = await call('GET', '/events/sac-quest-2027')
+    assert.equal(data.event.name, 'SAC Quest 2027')
     assert.equal(data.event.joinCode, undefined, 'no se filtra el código')
     assert.equal(data.teams.length, 2)
     const code = await call('GET', `/join-codes/${joinCode.toLowerCase()}`)
-    assert.equal(code.data.slug, 'taller-de-directivos-2027')
+    assert.equal(code.data.slug, 'sac-quest-2027')
   })
 
   test('unirse al evento', async () => {
-    const slug = '/events/taller-de-directivos-2027'
+    const slug = '/events/sac-quest-2027'
     const noCode = await call('POST', `${slug}/join`, { body: { alias: 'Ana', teamId: teamA, consent: true, code: 'XXXXXX' } })
     assert.equal(noCode.status, 403)
     const noConsent = await call('POST', `${slug}/join`, { body: { alias: 'Ana', teamId: teamA, code: joinCode } })
@@ -143,18 +143,18 @@ describe('flujo completo', () => {
   })
 
   test('lista de retos: secreto oculto, bloqueado con pista', async () => {
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/challenges', { token: ana })
+    const { data } = await call('GET', '/events/sac-quest-2027/challenges', { token: ana })
     const byId = new Map(data.challenges.map((c) => [c.id, c]))
     assert.ok(!byId.has(secretQr.id), 'el secreto no aparece')
     assert.equal(byId.get(photoCh.id).state, 'available')
     assert.equal(byId.get(lockedCh.id).state, 'locked')
     assert.match(byId.get(lockedCh.id).lockedHint, /Conoce una nueva Rama/)
     assert.equal(byId.get(qrCh.id).qrCode, undefined, 'no se filtra el código del QR')
-    assert.equal((await call('GET', '/events/taller-de-directivos-2027/challenges')).status, 401)
+    assert.equal((await call('GET', '/events/sac-quest-2027/challenges')).status, 401)
   })
 
   test('foto con aprobación queda pendiente; reintento idempotente', async () => {
-    const path = `/events/taller-de-directivos-2027/challenges/${photoCh.id}/submissions`
+    const path = `/events/sac-quest-2027/challenges/${photoCh.id}/submissions`
     const first = await call('POST', path, { token: ana, form: photoForm('client-000001') })
     assert.equal(first.status, 201)
     assert.equal(first.data.submission.status, 'pending')
@@ -173,14 +173,14 @@ describe('flujo completo', () => {
     notJpeg.set('photo', new Blob(['hola']), 'p.jpg')
     notJpeg.set('thumb', new Blob([JPEG]), 't.jpg')
     notJpeg.set('clientId', 'client-000003')
-    const bad = await call('POST', `/events/taller-de-directivos-2027/challenges/${arCh.id}/submissions`, { token: ana, form: notJpeg })
+    const bad = await call('POST', `/events/sac-quest-2027/challenges/${arCh.id}/submissions`, { token: ana, form: notJpeg })
     assert.equal(bad.status, 400)
   })
 
   test('las fotos pendientes no aparecen en la galería', async () => {
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/gallery', { token: beto })
+    const { data } = await call('GET', '/events/sac-quest-2027/gallery', { token: beto })
     assert.equal(data.items.length, 0)
-    const mine = await call('GET', '/events/taller-de-directivos-2027/me/submissions', { token: ana })
+    const mine = await call('GET', '/events/sac-quest-2027/me/submissions', { token: ana })
     assert.equal(mine.data.items[0].status, 'pending')
     assert.match(mine.data.items[0].photo.url, /^media\/events\/\d+\/photos\/.+\.jpg\?exp=\d+&sig=/)
   })
@@ -197,24 +197,24 @@ describe('flujo completo', () => {
     assert.equal(approved.data.submission.reviewer, 'Mod')
     assert.equal(approved.data.pending, 0)
 
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/challenges', { token: ana })
+    const { data } = await call('GET', '/events/sac-quest-2027/challenges', { token: ana })
     assert.equal(data.me.xp, 20)
     assert.equal(data.challenges.find((c) => c.id === lockedCh.id).state, 'available')
     assert.equal(data.me.badges.find((b) => b.name === 'Primer paso').earned, true)
   })
 
   test('foto aprobada: visible en galería, likes y descarga firmada', async () => {
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/gallery', { token: beto })
+    const { data } = await call('GET', '/events/sac-quest-2027/gallery', { token: beto })
     assert.equal(data.items.length, 1)
     const photo = data.items[0]
     assert.equal(photo.alias, 'Ana')
     assert.equal(photo.mine, false)
     assert.equal(data.filters.challenges.length, 1)
 
-    const like = await call('POST', `/events/taller-de-directivos-2027/photos/${photo.id}/like`, { token: beto })
+    const like = await call('POST', `/events/sac-quest-2027/photos/${photo.id}/like`, { token: beto })
     assert.deepEqual(like.data, { liked: true, likes: 1 })
-    await call('POST', `/events/taller-de-directivos-2027/photos/${photo.id}/like`, { token: beto })
-    const unlike = await call('DELETE', `/events/taller-de-directivos-2027/photos/${photo.id}/like`, { token: beto })
+    await call('POST', `/events/sac-quest-2027/photos/${photo.id}/like`, { token: beto })
+    const unlike = await call('DELETE', `/events/sac-quest-2027/photos/${photo.id}/like`, { token: beto })
     assert.deepEqual(unlike.data, { liked: false, likes: 0 })
 
     const img = await call('GET', `/${photo.url}`)
@@ -225,7 +225,7 @@ describe('flujo completo', () => {
   })
 
   test('AR: queda pendiente y suma XP al aprobarse', async () => {
-    const res = await call('POST', `/events/taller-de-directivos-2027/challenges/${arCh.id}/submissions`, {
+    const res = await call('POST', `/events/sac-quest-2027/challenges/${arCh.id}/submissions`, {
       token: ana,
       form: photoForm('client-ar-0001', { capturedWith: 'ar' }),
     })
@@ -234,32 +234,32 @@ describe('flujo completo', () => {
     assert.equal(res.data.me.xp, 20)
 
     await call('POST', `/admin/submissions/${res.data.submission.id}/review`, { token: mod, body: { decision: 'approve' } })
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/me', { token: ana })
+    const { data } = await call('GET', '/events/sac-quest-2027/me', { token: ana })
     assert.equal(data.me.xp, 35)
     assert.equal(data.me.badges.find((b) => b.name === 'Amigo de Watt').earned, true)
   })
 
   test('QR: reclamar, repetir y revelar un secreto', async () => {
-    const claim = await call('POST', `/events/taller-de-directivos-2027/qr/${qrCh.qrCode.toLowerCase()}`, { token: ana })
+    const claim = await call('POST', `/events/sac-quest-2027/qr/${qrCh.qrCode.toLowerCase()}`, { token: ana })
     assert.equal(claim.status, 200)
     assert.equal(claim.data.already, false)
     assert.equal(claim.data.me.xp, 45)
-    const again = await call('POST', `/events/taller-de-directivos-2027/qr/${qrCh.qrCode}`, { token: ana })
+    const again = await call('POST', `/events/sac-quest-2027/qr/${qrCh.qrCode}`, { token: ana })
     assert.equal(again.data.already, true)
     assert.equal(again.data.me.xp, 45)
 
-    const secret = await call('POST', `/events/taller-de-directivos-2027/qr/${secretQr.qrCode}`, { token: ana })
+    const secret = await call('POST', `/events/sac-quest-2027/qr/${secretQr.qrCode}`, { token: ana })
     assert.equal(secret.data.challenge.title, 'Secreto')
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/challenges', { token: ana })
+    const { data } = await call('GET', '/events/sac-quest-2027/challenges', { token: ana })
     assert.equal(data.challenges.find((c) => c.id === secretQr.id).state, 'approved', 'ya escaneado: ahora se ve')
     assert.equal(data.me.badges.find((b) => b.name === 'Explorador').earned, true)
 
-    const wrong = await call('POST', '/events/taller-de-directivos-2027/qr/ZZZZZZ', { token: ana })
+    const wrong = await call('POST', '/events/sac-quest-2027/qr/ZZZZZZ', { token: ana })
     assert.equal(wrong.status, 404)
   })
 
   test('límite de participantes', async () => {
-    const path = `/events/taller-de-directivos-2027/challenges/${limitedCh.id}/submissions`
+    const path = `/events/sac-quest-2027/challenges/${limitedCh.id}/submissions`
     assert.equal((await call('POST', path, { token: beto, form: photoForm('client-lim-01') })).status, 201)
     const full = await call('POST', path, { token: ana, form: photoForm('client-lim-02') })
     assert.equal(full.status, 409)
@@ -270,13 +270,13 @@ describe('flujo completo', () => {
     const list = await call('GET', `/admin/events/${eventId}/submissions?challengeId=${limitedCh.id}`, { token: admin })
     const sub = list.data.items[0]
     await call('POST', `/admin/submissions/${sub.id}/review`, { token: admin, body: { decision: 'reject', reason: 'Foto borrosa' } })
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/challenges', { token: beto })
+    const { data } = await call('GET', '/events/sac-quest-2027/challenges', { token: beto })
     const ch = data.challenges.find((c) => c.id === limitedCh.id)
     assert.equal(ch.state, 'rejected')
     assert.equal(ch.rejectReason, 'Foto borrosa')
     assert.equal(data.me.xp, 0)
     // El rechazo libera el cupo.
-    const retry = await call('POST', `/events/taller-de-directivos-2027/challenges/${limitedCh.id}/submissions`, {
+    const retry = await call('POST', `/events/sac-quest-2027/challenges/${limitedCh.id}/submissions`, {
       token: beto,
       form: photoForm('client-lim-03'),
     })
@@ -284,7 +284,7 @@ describe('flujo completo', () => {
   })
 
   test('ranking individual y por equipo', async () => {
-    const { data } = await call('GET', '/events/taller-de-directivos-2027/ranking', { token: beto })
+    const { data } = await call('GET', '/events/sac-quest-2027/ranking', { token: beto })
     assert.equal(data.participants[0].alias, 'Ana')
     assert.equal(data.participants[0].xp, 85)
     assert.equal(data.me.alias, 'Beto')
@@ -293,20 +293,20 @@ describe('flujo completo', () => {
   })
 
   test('recuperar la cuenta en otro teléfono', async () => {
-    const me = (await call('GET', '/events/taller-de-directivos-2027/me', { token: beto })).data.me
-    const rec = await call('POST', '/events/taller-de-directivos-2027/recover', { body: { code: me.recoveryCode.toLowerCase() } })
+    const me = (await call('GET', '/events/sac-quest-2027/me', { token: beto })).data.me
+    const rec = await call('POST', '/events/sac-quest-2027/recover', { body: { code: me.recoveryCode.toLowerCase() } })
     assert.equal(rec.status, 200)
     assert.equal(rec.data.me.alias, 'Beto')
-    assert.equal((await call('GET', '/events/taller-de-directivos-2027/me', { token: beto })).status, 401, 'el token viejo queda inválido')
+    assert.equal((await call('GET', '/events/sac-quest-2027/me', { token: beto })).status, 401, 'el token viejo queda inválido')
     beto = rec.data.token
   })
 
   test('borrar mi foto quita los puntos', async () => {
-    const mine = await call('GET', '/events/taller-de-directivos-2027/me/submissions', { token: ana })
+    const mine = await call('GET', '/events/sac-quest-2027/me/submissions', { token: ana })
     const ar = mine.data.items.find((s) => s.challenge.type === 'AR')
-    const del = await call('DELETE', `/events/taller-de-directivos-2027/me/submissions/${ar.id}`, { token: ana })
+    const del = await call('DELETE', `/events/sac-quest-2027/me/submissions/${ar.id}`, { token: ana })
     assert.equal(del.data.me.xp, 70)
-    const other = await call('DELETE', `/events/taller-de-directivos-2027/me/submissions/${ar.id}`, { token: beto })
+    const other = await call('DELETE', `/events/sac-quest-2027/me/submissions/${ar.id}`, { token: beto })
     assert.equal(other.status, 404)
   })
 
@@ -314,7 +314,7 @@ describe('flujo completo', () => {
     const list = await call('GET', `/admin/events/${eventId}/participants`, { token: mod })
     const b = list.data.participants.find((p) => p.alias === 'Beto')
     await call('PATCH', `/admin/participants/${b.id}`, { token: mod, body: { banned: true } })
-    const res = await call('GET', '/events/taller-de-directivos-2027/me', { token: beto })
+    const res = await call('GET', '/events/sac-quest-2027/me', { token: beto })
     assert.equal(res.status, 403)
     assert.equal(res.data.error.code, 'banned')
     await call('PATCH', `/admin/participants/${b.id}`, { token: mod, body: { banned: false } })
@@ -335,11 +335,11 @@ describe('flujo completo', () => {
     assert.equal(forged.status, 403)
   })
 
-  test('duplicar el evento para la RNR', async () => {
-    const dup = await call('POST', `/admin/events/${eventId}/duplicate`, { token: admin, body: { name: 'RNR 2027' } })
+  test('duplicar el evento para el siguiente', async () => {
+    const dup = await call('POST', `/admin/events/${eventId}/duplicate`, { token: admin, body: { name: 'SAC Quest 2028' } })
     assert.equal(dup.status, 201)
     const newId = dup.data.event.id
-    assert.equal(dup.data.event.slug, 'rnr-2027')
+    assert.equal(dup.data.event.slug, 'sac-quest-2028')
     assert.notEqual(dup.data.event.joinCode, joinCode)
     const list = (await call('GET', `/admin/events/${newId}/challenges`, { token: admin })).data.challenges
     assert.equal(list.length, 6)
@@ -353,12 +353,12 @@ describe('flujo completo', () => {
 
   test('cerrar el evento bloquea nuevos envíos', async () => {
     await call('PATCH', `/admin/events/${eventId}`, { token: admin, body: { status: 'closed' } })
-    const res = await call('POST', `/events/taller-de-directivos-2027/qr/${qrCh.qrCode}`, { token: beto })
+    const res = await call('POST', `/events/sac-quest-2027/qr/${qrCh.qrCode}`, { token: beto })
     assert.equal(res.status, 403)
     assert.equal(res.data.error.code, 'event_closed')
-    const join = await call('POST', '/events/taller-de-directivos-2027/join', { body: { alias: 'Caro', teamId: teamA, consent: true, code: joinCode } })
+    const join = await call('POST', '/events/sac-quest-2027/join', { body: { alias: 'Caro', teamId: teamA, consent: true, code: joinCode } })
     assert.equal(join.status, 403)
     // La galería y el ranking siguen disponibles.
-    assert.equal((await call('GET', '/events/taller-de-directivos-2027/ranking', { token: ana })).status, 200)
+    assert.equal((await call('GET', '/events/sac-quest-2027/ranking', { token: ana })).status, 200)
   })
 })

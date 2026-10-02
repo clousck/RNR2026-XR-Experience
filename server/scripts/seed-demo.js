@@ -34,7 +34,7 @@ db.tx(() => {
   const eventId = Number(
     db.run(
       `INSERT INTO events (slug, name, description, status, join_code, levels, settings, created_at)
-       VALUES ('demo', 'RNR Quest Demo', 'Evento de prueba', 'open', :code, :levels, :settings, :t)`,
+       VALUES ('demo', 'SAC Quest Demo', 'Evento de prueba', 'open', :code, :levels, :settings, :t)`,
       { code: randomCode(6), levels: JSON.stringify(DEFAULT_LEVELS), settings: JSON.stringify(DEFAULT_SETTINGS), t },
     ).lastInsertRowid,
   )
